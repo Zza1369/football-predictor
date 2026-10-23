@@ -1,0 +1,28 @@
+name: Daily Predictions
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+
+jobs:
+  predict:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - env:
+          TZ: Asia/Shanghai
+        run: python dc_predict.py
+      - run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add predictions_*.csv predictions_*.json
+          git diff --staged --quiet || git commit -m "Predictions $(date -u +%Y-%m-%d)"
+          git push
