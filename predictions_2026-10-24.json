@@ -1,0 +1,57 @@
+[
+  {
+    "league": "德甲",
+    "home": "Stuttgart",
+    "away": "M'gladbach",
+    "lambda_home": 2.472,
+    "lambda_away": 1.192,
+    "home_win": 0.6528,
+    "draw": 0.1805,
+    "away_win": 0.1668,
+    "top_scores": "2-1:0.093; 2-0:0.078; 3-1:0.077; 1-1:0.076; 3-0:0.065"
+  },
+  {
+    "league": "意甲",
+    "home": "Torino",
+    "away": "Monza",
+    "lambda_home": 1.488,
+    "lambda_away": 1.765,
+    "home_win": 0.3287,
+    "draw": 0.2257,
+    "away_win": 0.4456,
+    "top_scores": "1-1:0.099; 1-2:0.090; 2-1:0.076; 0-1:0.070; 2-2:0.067"
+  },
+  {
+    "league": "英超",
+    "home": "Aston Villa",
+    "away": "Man City",
+    "lambda_home": 1.378,
+    "lambda_away": 1.865,
+    "home_win": 0.2733,
+    "draw": 0.2485,
+    "away_win": 0.4782,
+    "top_scores": "1-1:0.112; 1-2:0.094; 2-1:0.069; 0-2:0.068; 2-2:0.064"
+  },
+  {
+    "league": "英超",
+    "home": "Arsenal",
+    "away": "Everton",
+    "lambda_home": 2.162,
+    "lambda_away": 0.682,
+    "home_win": 0.7049,
+    "draw": 0.201,
+    "away_win": 0.0941,
+    "top_scores": "2-0:0.136; 1-0:0.116; 3-0:0.098; 1-1:0.096; 2-1:0.093"
+  },
+  {
+    "league": "英超",
+    "home": "Chelsea",
+    "away": "Tottenham",
+    "lambda_home": 1.843,
+    "lambda_away": 1.086,
+    "home_win": 0.5386,
+    "draw": 0.2519,
+    "away_win": 0.2095,
+    "top_scores": "1-1:0.119; 2-1:0.099; 2-0:0.091; 1-0:0.086; 0-0:0.066"
+  }
+]
