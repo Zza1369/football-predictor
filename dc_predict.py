@@ -19,8 +19,8 @@ SEASON_2627 = "2627"
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 
 LEAGUE_NAMES = {
-    "E0": "英超", "SP1": "西甲", "D1": "德甲",
-    "I1": "意甲", "F1": "法甲", "E1": "英冠"
+    "E0": "英超", "SP1": "西甲", "D1": "德甲", "I1": "意甲", "F1": "法甲", "E1": "英冠",
+    "CL": "欧冠", "EL": "欧联" # 新增
 }
 
 MAX_GOALS = 8
@@ -64,7 +64,6 @@ def _std(df):
     df = df.rename(columns=rename_dict)
     if "odds_h" not in df.columns and "b365_h" in df.columns: df["odds_h"], df["odds_d"], df["odds_a"] = df["b365_h"], df["b365_d"], df["b365_a"]
     
-    # 保留时间，精确到天
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce").dt.normalize()
     df = df.dropna(subset=["date"])
     
@@ -75,19 +74,28 @@ def _std(df):
 
 def load_league(code):
     frames = []
-    try:
-        local = pd.read_csv(LOCAL_CSV, encoding="utf-8-sig")
-        local = local[local["league"] == LEAGUE_NAMES[code]].copy()
-        if len(local): frames.append(_std(local))
-    except: pass
-    url = BASE_URL.format(season=SEASON_2627, league=code)
-    try:
-        r = requests.get(url, timeout=15)
-        r.raise_for_status()
-        raw = pd.read_csv(io.StringIO(r.content.decode("utf-8-sig", errors="replace")))
-        raw = raw.rename(columns={"Date": "date", "HomeTeam": "home", "AwayTeam": "away", "FTHG": "hg", "FTAG": "ag"})
-        frames.append(_std(raw))
-    except: pass
+    if code in ["E0", "SP1", "D1", "I1", "F1"]:
+        try:
+            local = pd.read_csv(LOCAL_CSV, encoding="utf-8-sig")
+            local = local[local["league"] == LEAGUE_NAMES[code]].copy()
+            if len(local): frames.append(_std(local))
+        except: pass
+
+    # 欧战需要拉取 2526 和 2627 两个赛季
+    seasons = ["2627"]
+    if code in ["CL", "EL"]:
+        seasons = ["2526", "2627"]
+
+    for s in seasons:
+        url = BASE_URL.format(season=s, league=code)
+        try:
+            r = requests.get(url, timeout=15)
+            r.raise_for_status()
+            raw = pd.read_csv(io.StringIO(r.content.decode("utf-8-sig", errors="replace")))
+            raw = raw.rename(columns={"Date": "date", "HomeTeam": "home", "AwayTeam": "away", "FTHG": "hg", "FTAG": "ag"})
+            frames.append(_std(raw))
+        except: pass
+
     if not frames: raise RuntimeError(f"{code} 无数据")
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date").reset_index(drop=True)
@@ -132,7 +140,10 @@ class DixonColes:
         w = np.exp(-self.xi * days)
         if self.use_xg:
             mask = (df_fit_all["xg_home"].notna() & df_fit_all["xg_away"].notna()).values
-            if mask.sum() / len(df_fit_all) < 0.5: self.use_xg = False
+            # 欧战通常没有xG，如果覆盖率不足 50%，自动降级
+            if mask.sum() / len(df_fit_all) < 0.5: 
+                print("  欧战缺少xG数据，自动降级为进球数拟合。")
+                self.use_xg = False
             else:
                 df_fit = df_fit_all[mask].reset_index(drop=True)
                 w_fit = w[mask]
@@ -178,96 +189,70 @@ class DixonColes:
         return g, lh, la
 
 def get_performance_report(actual_results):
-    """生成历史战绩报告 (加入日期时间锁)"""
     pred_files = sorted(glob.glob("predictions_*.csv"))
     hits, total = 0, 0
     details = []
-    
     for f in pred_files:
         date_str = f.replace("predictions_", "").replace(".csv", "")
         try:
-            # 获取预测生成的日期
             pred_date = pd.to_datetime(date_str).normalize()
             df = pd.read_csv(f, encoding="utf-8-sig")
             if "message" in df.columns: continue
-            
             for _, row in df.iterrows():
                 h_cn, a_cn = str(row["home"]).strip(), str(row["away"]).strip()
                 top_score = str(row["top_scores"]).split(";")[0].split(":")[0].strip()
-                
                 h_en, a_en = translate_to_en(h_cn), translate_to_en(a_cn)
                 key = f"{h_en}||{a_en}"
-                
                 if key in actual_results:
-                    # 遍历该对阵的所有比赛，必须寻找比赛日期 >= 预测日期的赛果
                     matched_match = None
                     for match in actual_results[key]:
                         if match["date"] >= pred_date:
                             matched_match = match
                             break
-                    
                     if matched_match:
                         actual_h, actual_a = matched_match["hg"], matched_match["ag"]
                         pred_h, pred_a = map(int, top_score.split("-"))
-                        
                         act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
                         pred_res = "H" if pred_h > pred_a else ("D" if pred_h == pred_a else "A")
-                        
                         total += 1
                         res_ok = (act_res == pred_res)
                         score_ok = (pred_h == actual_h and pred_a == actual_a)
                         if res_ok: hits += 1
-                        
                         details.append(f"| {date_str} | {h_cn} vs {a_cn} | {top_score} | {actual_h}-{actual_a} | {'✅' if res_ok else '❌'} | {'✅' if score_ok else '❌'} |")
-        except Exception as e: 
-            pass
-
+        except: pass
     md = f"### 📊 历史战绩回顾\n"
     if total > 0:
         md += f"**已结算 {total} 场 | 胜平负命中率: {hits/total:.1%}**\n\n"
         md += "| 日期 | 比赛 | 预测比分 | 实际比分 | 胜负 | 比分 |\n|---|---|---|---|---|---|\n"
         md += "\n".join(details[-10:])
         if len(details) > 10: md += f"\n\n*(仅显示最近 10 场)*\n"
-    else:
-        md += "暂无已完赛记录（或比赛还没踢）。\n"
+    else: md += "暂无已完赛记录（或比赛还没踢）。\n"
     return md
 
 def push_to_wechat(md_text):
     key = os.environ.get("SERVERCHAN_KEY")
     if not key: return
-    print("正在推送到微信...")
     try:
         requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
-        print("微信推送成功！")
-    except Exception as e:
-        print(f"微信推送异常: {e}")
+    except: pass
 
 def main():
-    print(f"  终极量化预测系统 | {datetime.now():%Y-%m-%d %H:%M}")
-    
-    try:
-        fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
-    except:
-        return
+    try: fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
+    except: return
 
     results, cache, fitted = [], {}, {}
-    
-    # 1. 先拉取所有赛果，用于复盘（存入列表包含日期）
     actual_results = {}
     for code in LEAGUE_NAMES.keys():
         try:
             df = load_league(code)
             for _, r in df.dropna(subset=["hg", "ag"]).iterrows():
                 key = f"{r['home']}||{r['away']}"
-                if key not in actual_results:
-                    actual_results[key] = []
+                if key not in actual_results: actual_results[key] = []
                 actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
-    # 2. 生成今日预测报告
     md = f"## ⚽ 今日模型预测 ({datetime.now().strftime('%m-%d')})\n\n"
-    if len(fixtures) == 0:
-        md += "今日没有填写的预测比赛。\n\n"
+    if len(fixtures) == 0: md += "今日没有填写的预测比赛。\n\n"
 
     for _, r in fixtures.iterrows():
         code = str(r["league"]).strip()
@@ -280,12 +265,13 @@ def main():
             try: cache[code] = load_league(code)
             except: cache[code] = None
         if cache[code] is None: continue
-
-        if code not in fitted:
-            fitted[code] = DixonColes().fit(cache[code])
+        if code not in fitted: fitted[code] = DixonColes().fit(cache[code])
         model = fitted[code]
 
-        if h_en not in model._idx or a_en not in model._idx: continue
+        if h_en not in model._idx or a_en not in model._idx: 
+            md += f"### [{name}] {h_cn} vs {a_cn}\n"
+            md += f"> ⚠️ 队名未在数据库中找到，跳过预测。\n\n"
+            continue
 
         df_league = cache[code]
         today = pd.Timestamp.now().normalize()
@@ -301,10 +287,7 @@ def main():
 
         final_hw, final_dr, final_aw = model_hw, model_dr, model_aw
         match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
-        
-        # 如果今天没有该场次赔率（比如提前一周预测），尝试找最近的赔率
-        if len(match_rows) == 0:
-            match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
+        if len(match_rows) == 0: match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
 
         val_flag_h, val_flag_a = "", ""
         if len(match_rows) > 0:
@@ -315,11 +298,9 @@ def main():
                 mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
                 if model_hw - mkt_hw > VALUE_THRESHOLD: val_flag_h = "🔥 主胜有价值"
                 if model_aw - mkt_aw > VALUE_THRESHOLD: val_flag_a = "🔥 客胜有价值"
-
                 final_hw = MARKET_WEIGHT * mkt_hw + (1 - MARKET_WEIGHT) * model_hw
                 final_dr = MARKET_WEIGHT * mkt_dr + (1 - MARKET_WEIGHT) * model_dr
                 final_aw = MARKET_WEIGHT * mkt_aw + (1 - MARKET_WEIGHT) * model_aw
-                
                 scale_h, scale_d, scale_a = final_hw/model_hw, final_dr/model_dr, final_aw/model_aw
                 for h in range(g.shape[0]):
                     for a in range(g.shape[1]):
@@ -336,11 +317,7 @@ def main():
         scores = sorted([(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
         top3_str = "、".join([f"**{s[0]}**({s[1]:.1%})" for s in scores[:3]])
 
-        results.append({
-            "league": name, "home": h_cn, "away": a_cn,
-            "home_win": round(final_hw, 4), "draw": round(final_dr, 4), "away_win": round(final_aw, 4),
-            "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5]),
-        })
+        results.append({"league": name, "home": h_cn, "away": a_cn, "home_win": round(final_hw, 4), "draw": round(final_dr, 4), "away_win": round(final_aw, 4), "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5])})
         
         md += f"### [{name}] {h_cn} vs {a_cn}\n"
         if val_flag_h or val_flag_a: md += f"> 💡 **价值提示**: {val_flag_h} {val_flag_a}\n"
@@ -357,10 +334,7 @@ def main():
 
     md += "---\n"
     md += get_performance_report(actual_results)
-    
-    with open("performance.md", "w", encoding="utf-8") as f:
-        f.write(md)
-        
+    with open("performance.md", "w", encoding="utf-8") as f: f.write(md)
     push_to_wechat(md)
 
 if __name__ == "__main__":
