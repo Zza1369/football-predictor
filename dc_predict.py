@@ -1,4 +1,5 @@
 import io
+import os
 import json
 import warnings
 from datetime import datetime
@@ -25,7 +26,6 @@ MAX_GOALS = 8
 TOP_N = 6
 MARKET_WEIGHT = 0.5
 
-# 直接把字典写死在代码里，绝对生效
 EN_TO_CN = {
     "Man United": "曼联", "Man City": "曼城", "Liverpool": "利物浦", "Arsenal": "阿森纳", "Chelsea": "切尔西",
     "Tottenham": "热刺", "Newcastle": "纽卡", "Aston Villa": "阿斯顿维拉", "Brighton": "布莱顿",
@@ -38,14 +38,13 @@ EN_TO_CN = {
     "Girona": "赫罗纳", "Celta": "塞尔塔", "Vallecano": "巴列卡诺", "Osasuna": "奥萨苏纳",
     "Mallorca": "马洛卡", "Getafe": "赫塔菲", "Alaves": "阿拉维斯", "Las Palmas": "拉斯帕尔马斯",
     "Leganes": "莱加内斯", "Valladolid": "巴拉多利德", "Espanol": "西班牙人", "Sevilla": "塞维利亚", "Oviedo": "奥维耶多",
-    "Levante": "莱万特",
-    "Bayern Munich": "拜仁", "Leverkusen": "勒沃库森", "Dortmund": "多特蒙德", "RB Leipzig": "莱比锡红牛",
-    "Eintracht Frankfurt": "法兰克福", "Stuttgart": "斯图加特", "Freiburg": "弗莱堡", "Wolfsburg": "沃尔夫斯堡",
-    "Mainz": "美因茨", "Hoffenheim": "霍芬海姆", "Augsburg": "奥格斯堡", "Werder Bremen": "不莱梅",
-    "Union Berlin": "柏林联合", "M'gladbach": "门兴", "St Pauli": "圣保利", "Heidenheim": "海登海姆",
-    "Holstein Kiel": "荷尔斯泰因基尔", "Bochum": "波鸿", "Hamburg": "汉堡", "FC Koln": "科隆",
-    "Inter": "国米", "Milan": "AC米兰", "Juventus": "尤文图斯", "Napoli": "那不勒斯", "Roma": "罗马",
-    "Lazio": "拉齐奥", "Atalanta": "亚特兰大", "Fiorentina": "佛罗伦萨", "Bologna": "博洛尼亚",
+    "Levante": "莱万特", "Bayern Munich": "拜仁", "Leverkusen": "勒沃库森", "Dortmund": "多特蒙德", 
+    "RB Leipzig": "莱比锡红牛", "Eintracht Frankfurt": "法兰克福", "Stuttgart": "斯图加特", "Freiburg": "弗莱堡", 
+    "Wolfsburg": "沃尔夫斯堡", "Mainz": "美因茨", "Hoffenheim": "霍芬海姆", "Augsburg": "奥格斯堡", 
+    "Werder Bremen": "不莱梅", "Union Berlin": "柏林联合", "M'gladbach": "门兴", "St Pauli": "圣保利", 
+    "Heidenheim": "海登海姆", "Holstein Kiel": "荷尔斯泰因基尔", "Bochum": "波鸿", "Hamburg": "汉堡", 
+    "FC Koln": "科隆", "Inter": "国米", "Milan": "AC米兰", "Juventus": "尤文图斯", "Napoli": "那不勒斯", 
+    "Roma": "罗马", "Lazio": "拉齐奥", "Atalanta": "亚特兰大", "Fiorentina": "佛罗伦萨", "Bologna": "博洛尼亚",
     "Torino": "都灵", "Udinese": "乌迪内斯", "Genoa": "热那亚", "Cagliari": "卡利亚里", "Lecce": "莱切",
     "Verona": "维罗纳", "Empoli": "恩波利", "Parma": "帕尔马", "Como": "科莫", "Venezia": "威尼斯", "Monza": "蒙扎",
     "Paris SG": "巴黎圣日耳曼", "Monaco": "摩纳哥", "Marseille": "马赛", "Lille": "里尔", "Lyon": "里昂",
@@ -218,8 +217,30 @@ def load_fixtures():
         out.append((code, h_en, a_en))
     return out
 
+def push_to_wechat(md_text):
+    """推送到微信"""
+    key = os.environ.get("SERVERCHAN_KEY")
+    if not key:
+        print("未配置 SERVERCHAN_KEY，跳过微信推送。")
+        return
+    
+    print("正在推送到微信...")
+    url = f"https://sctapi.ftqq.com/{key}.send"
+    data = {
+        "title": f"⚽ 今日足球预测 {datetime.now().strftime('%m月%d日')}",
+        "desp": md_text
+    }
+    try:
+        r = requests.post(url, data=data, timeout=10)
+        if r.status_code == 200:
+            print("微信推送成功！")
+        else:
+            print(f"微信推送失败: {r.text}")
+    except Exception as e:
+        print(f"微信推送异常: {e}")
+
 def main():
-    print(f"  全自动预测系统 (中文引擎版) | {datetime.now():%Y-%m-%d %H:%M}")
+    print(f"  全自动预测系统 (微信推送版) | {datetime.now():%Y-%m-%d %H:%M}")
     targets = load_fixtures()
     print(f"从 fixtures.csv 读到 {len(targets)} 场比赛")
 
@@ -252,7 +273,6 @@ def main():
         a_display = translate_to_cn(a_en)
 
         if h_en not in model._idx or a_en not in model._idx:
-            print(f"[{name}] {h_display} vs {a_display}: 队名不在数据中，跳过")
             continue
 
         g, lh, la = model.predict(h_en, a_en)
@@ -314,8 +334,20 @@ def main():
 
     today = datetime.now().strftime("%Y-%m-%d")
     if results:
-        pd.DataFrame(results).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
+        df = pd.DataFrame(results)
+        df.to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
         print(f"已写入 predictions_{today}.csv")
+
+        # ===== 生成好看的 Markdown 发给微信 =====
+        md = f"## ⚽ 今日模型预测 ({datetime.now().strftime('%m-%d')})\n\n"
+        for _, row in df.iterrows():
+            md += f"### [{row['league']}] {row['home']} vs {row['away']}\n"
+            md += f"- **胜平负**: 主 {row['home_win']:.1%} | 平 {row['draw']:.1%} | 客 {row['away_win']:.1%}\n"
+            md += f"- **大小球**: 大 {row['over_2_5']:.1%} | 小 {row['under_2_5']:.1%}\n"
+            md += f"- **双方进球**: 是 {row['btts_yes']:.1%} | 否 {row['btts_no']:.1%}\n"
+            md += f"- **推荐比分**: `{row['top_scores'].split(';')[0]}`\n\n"
+        
+        push_to_wechat(md)
 
 if __name__ == "__main__":
     main()
