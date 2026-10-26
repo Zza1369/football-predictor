@@ -1,7 +1,7 @@
 import io
 import json
 import warnings
-from datetime import datetime, timedelta
+from datetime import datetime
 
 import numpy as np
 import pandas as pd
@@ -12,72 +12,56 @@ from scipy.stats import poisson
 warnings.filterwarnings("ignore")
 
 LOCAL_CSV = "fd_with_xg_2526.csv"
+FIXTURES_CSV = "fixtures.csv"
+DICT_CSV = "teams_cn.csv"
 SEASON_2627 = "2627"
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 
-# 五大联赛+英冠
 LEAGUE_NAMES = {
     "E0": "英超", "SP1": "西甲", "D1": "德甲",
     "I1": "意甲", "F1": "法甲", "E1": "英冠"
 }
 
-# 【核心开关】设为 True：自动抓取未来几天的所有比赛；设为 False：只跑 fixtures.csv
-AUTO_MODE = True
-DAYS_AHEAD = 10  # 预测未来几天内的比赛
-
 MAX_GOALS = 8
 TOP_N = 6
 
-# 加载中文字典
 def load_dict():
     try:
-        df = pd.read_csv("teams_cn.csv", encoding="utf-8-sig")
-        return dict(zip(df["en"].str.strip(), df["cn"].str.strip()))
+        df = pd.read_csv(DICT_CSV, encoding="utf-8-sig")
+        return dict(zip(df["cn"].str.strip(), df["en"].str.strip()))
     except Exception:
         return {}
 
-EN_TO_CN = load_dict()
+CN_DICT = load_dict()
 
-def translate_to_cn(name):
-    """如果是英文字典里有的，转成中文；没有就保留英文"""
-    return EN_TO_CN.get(str(name).strip(), str(name).strip())
+def translate(name):
+    name = str(name).strip()
+    return CN_DICT.get(name, name)
 
-def _std(df, keep_unplayed=False):
+def _std(df):
     df = df.copy()
     df = df.rename(columns={"HxG": "xg_home", "AxG": "xg_away"})
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["date"])
-    
-    # 把没有比分的比赛标为 NaN
-    df["hg"] = pd.to_numeric(df.get("hg"), errors="coerce")
-    df["ag"] = pd.to_numeric(df.get("ag"), errors="coerce")
-    
-    if not keep_unplayed:
-        # 拟合模型时，只保留已经踢完的比赛
-        df = df.dropna(subset=["hg", "ag"])
-        
+    df = df.dropna(subset=["date", "hg", "ag"])
+    df["hg"] = df["hg"].astype(int)
+    df["ag"] = df["ag"].astype(int)
     df["xg_home"] = pd.to_numeric(df.get("xg_home"), errors="coerce")
     df["xg_away"] = pd.to_numeric(df.get("xg_away"), errors="coerce")
     return df[["date", "home", "away", "hg", "ag", "xg_home", "xg_away"]]
 
 def load_league(code):
-    """加载联赛数据，同时保留已完赛（训练）和未完赛（预测）的数据"""
-    frames_train = []
-    frames_future = []
-    
-    # 2526 历史数据（只用于训练）
+    frames = []
     try:
         local = pd.read_csv(LOCAL_CSV, encoding="utf-8-sig")
         local = local[local["league"] == LEAGUE_NAMES[code]].copy()
         if len(local):
-            frames_train.append(_std(local, keep_unplayed=False))
+            frames.append(_std(local))
     except FileNotFoundError:
         pass
 
-    # 2627 最新数据（区分训练和预测）
     url = BASE_URL.format(season=SEASON_2627, league=code)
     try:
-        r = requests.get(url, timeout=30)
+        r = requests.get(url, timeout=15)
         r.raise_for_status()
         text = r.content.decode("utf-8-sig", errors="replace")
         raw = pd.read_csv(io.StringIO(text))
@@ -85,35 +69,16 @@ def load_league(code):
             "Date": "date", "HomeTeam": "home", "AwayTeam": "away",
             "FTHG": "hg", "FTAG": "ag",
         })
-        # 训练数据：有比分
-        frames_train.append(_std(raw, keep_unplayed=False))
-        # 预测数据：保留没比分的未来赛程
-        frames_future.append(_std(raw, keep_unplayed=True))
+        frames.append(_std(raw))
     except Exception as e:
-        print(f"    {code} 2627 数据拉取失败: {type(e).__name__}")
+        print(f"    {code} 2627 跳过: {type(e).__name__}")
 
-    if not frames_train:
-        raise RuntimeError(f"{code} 无训练数据")
-        
-    df_train = pd.concat(frames_train, ignore_index=True)
-    df_train = df_train.drop_duplicates(subset=["date", "home", "away"]).sort_values("date")
-    
-    df_future = pd.DataFrame()
-    if frames_future:
-        df_future = pd.concat(frames_future, ignore_index=True)
-        df_future = df_future.drop_duplicates(subset=["date", "home", "away"]).sort_values("date")
-        # 过滤出：没比分 + 日期在 [今天-1天, 今天+N天] 之间
-        today = pd.Timestamp.now().normalize()
-        end = today + pd.Timedelta(days=DAYS_AHEAD)
-        df_future = df_future[
-            (df_future["date"] >= today - pd.Timedelta(days=1)) & 
-            (df_future["date"] <= end) & 
-            (df_future["hg"].isna())
-        ]
+    if not frames:
+        raise RuntimeError(f"{code} 无数据")
+    df = pd.concat(frames, ignore_index=True)
+    df = df.drop_duplicates(subset=["date", "home", "away"]).sort_values("date")
+    return df.reset_index(drop=True)
 
-    return df_train.reset_index(drop=True), df_future.reset_index(drop=True)
-
-# 泊松相关
 def poisson_deviance(y, mu):
     term = np.where(y > 0, y * np.log(y / mu), 0.0)
     return 2 * (term - (y - mu))
@@ -212,76 +177,96 @@ class DixonColes:
         g /= g.sum()
         return g, lh, la
 
+def load_fixtures():
+    try:
+        df = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig")
+    except FileNotFoundError:
+        print(f"  找不到 {FIXTURES_CSV}")
+        return []
+    df = df.dropna(subset=["league", "home", "away"])
+    out = []
+    for _, r in df.iterrows():
+        code = str(r["league"]).strip()
+        if code not in LEAGUE_NAMES:
+            print(f"  跳过未知联赛代码: {code}")
+            continue
+        h_en = translate(r["home"])
+        a_en = translate(r["away"])
+        out.append((code, h_en, a_en, str(r["home"]).strip(), str(r["away"]).strip()))
+    return out
+
 def main():
-    print("=" * 64)
     print(f"  全自动预测系统 | {datetime.now():%Y-%m-%d %H:%M}")
-    print("=" * 64)
+    targets = load_fixtures()
+    print(f"从 fixtures.csv 读到 {len(targets)} 场比赛")
+
+    if not targets:
+        today = datetime.now().strftime("%Y-%m-%d")
+        pd.DataFrame([{"message": "no fixtures"}]).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
+        return
 
     results = []
-    
-    for code, name in LEAGUE_NAMES.items():
-        print(f"\n[{name}] 加载数据并拟合 ...")
-        try:
-            df_train, df_future = load_league(code)
-            model = DixonColes(use_xg=True).fit(df_train)
-        except Exception as e:
-            print(f"  处理失败: {e}")
-            continue
+    cache = {}
+    fitted = {}
 
-        # 确定要预测的目标
-        targets = []
-        if AUTO_MODE:
-            if not df_future.empty:
-                targets = [(r["home"], r["away"]) for _, r in df_future.iterrows()]
-                print(f"  自动抓取到未来 {DAYS_AHEAD} 天内 {len(targets)} 场未开赛比赛")
-            else:
-                print(f"  未来 {DAYS_AHEAD} 天内没有未开赛的比赛")
-        else:
-            # 如果关掉了 AUTO_MODE，就退回读 fixtures.csv（此逻辑省略，推荐全自动）
-            pass
+    for code, h_en, a_en, h_cn, a_cn in targets:
+        name = LEAGUE_NAMES[code]
 
-        # 进行预测
-        for h_en, a_en in targets:
-            if h_en not in model._idx or a_en not in model._idx:
-                print(f"    跳过: {h_en} vs {a_en} (数据不足)")
+        if code not in cache:
+            print(f"[{name}] 加载数据 ...")
+            try:
+                cache[code] = load_league(code)
+            except Exception as e:
+                print(f"  加载失败: {e}, 跳过 {h_cn} vs {a_cn}")
+                cache[code] = None
                 continue
 
-            g, lh, la = model.predict(h_en, a_en)
-            hw = float(np.tril(g, -1).sum())
-            dr = float(np.trace(g))
-            aw = float(np.triu(g, 1).sum())
-            scores = [(f"{h}-{a}", float(g[h, a]))
-                      for h in range(g.shape[0]) for a in range(g.shape[1])]
-            scores.sort(key=lambda x: x[1], reverse=True)
+        if cache[code] is None:
+            continue
 
-            h_cn = translate_to_cn(h_en)
-            a_cn = translate_to_cn(a_en)
+        if code not in fitted:
+            print(f"[{name}] 拟合 ...")
+            try:
+                fitted[code] = DixonColes(use_xg=True).fit(cache[code])
+            except Exception as e:
+                print(f"  拟合失败: {e}, 跳过")
+                fitted[code] = None
+                continue
 
-            print(f"    -> {h_cn} vs {a_cn} | 主胜 {hw:.1%} 平 {dr:.1%} 客胜 {aw:.1%}")
+        model = fitted[code]
+        if model is None:
+            continue
 
-            results.append({
-                "league": name,
-                "home": h_cn,  # 存中文
-                "away": a_cn,  # 存中文
-                "lambda_home": round(lh, 3),
-                "lambda_away": round(la, 3),
-                "home_win": round(hw, 4),
-                "draw": round(dr, 4),
-                "away_win": round(aw, 4),
-                "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5]),
-            })
+        if h_en not in model._idx or a_en not in model._idx:
+            print(f"[{name}] {h_cn} vs {a_cn} (翻译为 {h_en} vs {a_en}): 队名不在数据中，跳过")
+            print(f"  可用球队示例: {sorted(model._idx.keys())[:8]}")
+            continue
+
+        g, lh, la = model.predict(h_en, a_en)
+        hw = float(np.tril(g, -1).sum())
+        dr = float(np.trace(g))
+        aw = float(np.triu(g, 1).sum())
+        scores = [(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])]
+        scores.sort(key=lambda x: x[1], reverse=True)
+
+        print(f"[{name}] {h_cn} vs {a_cn}  主胜 {hw:.1%} | 平局 {dr:.1%} | 客胜 {aw:.1%}")
+
+        results.append({
+            "league": name, "home": h_cn, "away": a_cn,
+            "lambda_home": round(lh, 3), "lambda_away": round(la, 3),
+            "home_win": round(hw, 4), "draw": round(dr, 4), "away_win": round(aw, 4),
+            "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5]),
+        })
 
     today = datetime.now().strftime("%Y-%m-%d")
     if results:
-        pd.DataFrame(results).to_csv(f"predictions_{today}.csv",
-                                     index=False, encoding="utf-8-sig")
+        pd.DataFrame(results).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
         with open(f"predictions_{today}.json", "w", encoding="utf-8") as f:
             json.dump(results, f, ensure_ascii=False, indent=2)
-        print(f"\n✅ 成功预测 {len(results)} 场比赛，已写入 predictions_{today}.csv")
+        print(f"已写入 predictions_{today}.csv / .json")
     else:
-        print("\n今日没有可以预测的比赛。")
-        pd.DataFrame([{"message": "no predictions"}]).to_csv(
-            f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
+        print("所有比赛均被跳过。")
+        pd.DataFrame([{"message": "no predictions"}]).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
 
 if __name__ == "__main__":
     main()
