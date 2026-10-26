@@ -63,8 +63,11 @@ def _std(df):
     rename_dict = {"HxG": "xg_home", "AxG": "xg_away", "AvgH": "odds_h", "AvgD": "odds_d", "AvgA": "odds_a", "B365H": "b365_h", "B365D": "b365_d", "B365A": "b365_a"}
     df = df.rename(columns=rename_dict)
     if "odds_h" not in df.columns and "b365_h" in df.columns: df["odds_h"], df["odds_d"], df["odds_a"] = df["b365_h"], df["b365_d"], df["b365_a"]
-    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
+    
+    # 保留时间，精确到天
+    df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce").dt.normalize()
     df = df.dropna(subset=["date"])
+    
     for col in ["xg_home", "xg_away", "odds_h", "odds_d", "odds_a"]:
         if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")
         else: df[col] = np.nan
@@ -175,7 +178,7 @@ class DixonColes:
         return g, lh, la
 
 def get_performance_report(actual_results):
-    """生成历史战绩报告"""
+    """生成历史战绩报告 (加入日期时间锁)"""
     pred_files = sorted(glob.glob("predictions_*.csv"))
     hits, total = 0, 0
     details = []
@@ -183,8 +186,11 @@ def get_performance_report(actual_results):
     for f in pred_files:
         date_str = f.replace("predictions_", "").replace(".csv", "")
         try:
+            # 获取预测生成的日期
+            pred_date = pd.to_datetime(date_str).normalize()
             df = pd.read_csv(f, encoding="utf-8-sig")
             if "message" in df.columns: continue
+            
             for _, row in df.iterrows():
                 h_cn, a_cn = str(row["home"]).strip(), str(row["away"]).strip()
                 top_score = str(row["top_scores"]).split(";")[0].split(":")[0].strip()
@@ -193,25 +199,34 @@ def get_performance_report(actual_results):
                 key = f"{h_en}||{a_en}"
                 
                 if key in actual_results:
-                    actual_h, actual_a = actual_results[key]
-                    pred_h, pred_a = map(int, top_score.split("-"))
+                    # 遍历该对阵的所有比赛，必须寻找比赛日期 >= 预测日期的赛果
+                    matched_match = None
+                    for match in actual_results[key]:
+                        if match["date"] >= pred_date:
+                            matched_match = match
+                            break
                     
-                    act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
-                    pred_res = "H" if pred_h > pred_a else ("D" if pred_h == pred_a else "A")
-                    
-                    total += 1
-                    res_ok = (act_res == pred_res)
-                    score_ok = (pred_h == actual_h and pred_a == actual_a)
-                    if res_ok: hits += 1
-                    
-                    details.append(f"| {date_str} | {h_cn} vs {a_cn} | {top_score} | {actual_h}-{actual_a} | {'✅' if res_ok else '❌'} | {'✅' if score_ok else '❌'} |")
-        except: pass
+                    if matched_match:
+                        actual_h, actual_a = matched_match["hg"], matched_match["ag"]
+                        pred_h, pred_a = map(int, top_score.split("-"))
+                        
+                        act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
+                        pred_res = "H" if pred_h > pred_a else ("D" if pred_h == pred_a else "A")
+                        
+                        total += 1
+                        res_ok = (act_res == pred_res)
+                        score_ok = (pred_h == actual_h and pred_a == actual_a)
+                        if res_ok: hits += 1
+                        
+                        details.append(f"| {date_str} | {h_cn} vs {a_cn} | {top_score} | {actual_h}-{actual_a} | {'✅' if res_ok else '❌'} | {'✅' if score_ok else '❌'} |")
+        except Exception as e: 
+            pass
 
     md = f"### 📊 历史战绩回顾\n"
     if total > 0:
         md += f"**已结算 {total} 场 | 胜平负命中率: {hits/total:.1%}**\n\n"
         md += "| 日期 | 比赛 | 预测比分 | 实际比分 | 胜负 | 比分 |\n|---|---|---|---|---|---|\n"
-        md += "\n".join(details[-10:]) # 微信里最多显示最近10场，免得刷屏
+        md += "\n".join(details[-10:])
         if len(details) > 10: md += f"\n\n*(仅显示最近 10 场)*\n"
     else:
         md += "暂无已完赛记录（或比赛还没踢）。\n"
@@ -237,13 +252,16 @@ def main():
 
     results, cache, fitted = [], {}, {}
     
-    # 1. 先拉取所有赛果，用于复盘
+    # 1. 先拉取所有赛果，用于复盘（存入列表包含日期）
     actual_results = {}
     for code in LEAGUE_NAMES.keys():
         try:
             df = load_league(code)
             for _, r in df.dropna(subset=["hg", "ag"]).iterrows():
-                actual_results[f"{r['home']}||{r['away']}"] = (int(r['hg']), int(r['ag']))
+                key = f"{r['home']}||{r['away']}"
+                if key not in actual_results:
+                    actual_results[key] = []
+                actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
     # 2. 生成今日预测报告
@@ -270,7 +288,7 @@ def main():
         if h_en not in model._idx or a_en not in model._idx: continue
 
         df_league = cache[code]
-        today = pd.Timestamp.now()
+        today = pd.Timestamp.now().normalize()
         def get_rest(team):
             m = df_league[((df_league["home"] == team) | (df_league["away"] == team)) & (df_league["date"] < today)]
             return 99 if len(m)==0 else (today - m["date"].max()).days
@@ -282,8 +300,12 @@ def main():
         model_aw = float(np.triu(g, 1).sum())
 
         final_hw, final_dr, final_aw = model_hw, model_dr, model_aw
-        match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
+        match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
         
+        # 如果今天没有该场次赔率（比如提前一周预测），尝试找最近的赔率
+        if len(match_rows) == 0:
+            match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
+
         val_flag_h, val_flag_a = "", ""
         if len(match_rows) > 0:
             oh, od, oa = match_rows.iloc[-1]["odds_h"], match_rows.iloc[-1]["odds_d"], match_rows.iloc[-1]["odds_a"]
@@ -311,7 +333,6 @@ def main():
         over_25 = sum(g[h,a] for h in range(9) for a in range(9) if h+a >= 3)
         btts_yes = sum(g[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        # 取前3个比分
         scores = sorted([(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
         top3_str = "、".join([f"**{s[0]}**({s[1]:.1%})" for s in scores[:3]])
 
@@ -330,12 +351,10 @@ def main():
         md += f"- **大小/双方进球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
         md += f"- **推荐比分**: {top3_str}\n\n"
 
-    # 3. 写入文件
     if results:
         today_str = datetime.now().strftime("%Y-%m-%d")
         pd.DataFrame(results).to_csv(f"predictions_{today_str}.csv", index=False, encoding="utf-8-sig")
 
-    # 4. 追加复盘战绩并推送
     md += "---\n"
     md += get_performance_report(actual_results)
     
