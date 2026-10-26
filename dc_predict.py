@@ -23,7 +23,7 @@ LEAGUE_NAMES = {
 
 # 【核心开关】设为 True：自动抓取未来几天的所有比赛；设为 False：只跑 fixtures.csv
 AUTO_MODE = True
-DAYS_AHEAD = 3  # 预测未来几天内的比赛
+DAYS_AHEAD = 10  # 预测未来几天内的比赛
 
 MAX_GOALS = 8
 TOP_N = 6
