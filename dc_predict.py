@@ -24,27 +24,34 @@ LEAGUE_NAMES = {
 
 MAX_GOALS = 8
 TOP_N = 6
-MARKET_WEIGHT = 0.5  # 市场赔率在最终预测中的权重
+MARKET_WEIGHT = 0.5
+
+# 双向字典
+CN_TO_EN = {}
+EN_TO_CN = {}
 
 def load_dict():
+    global CN_TO_EN, EN_TO_CN
     try:
         df = pd.read_csv(DICT_CSV, encoding="utf-8-sig")
-        return dict(zip(df["cn"].str.strip(), df["en"].str.strip()))
-    except Exception:
-        return {}
+        CN_TO_EN = dict(zip(df["cn"].str.strip(), df["en"].str.strip()))
+        EN_TO_CN = dict(zip(df["en"].str.strip(), df["cn"].str.strip()))
+    except Exception as e:
+        print(f"警告: 字典文件 {DICT_CSV} 加载失败，将使用纯英文名。")
 
-CN_DICT = load_dict()
-
-def translate(name):
+def translate_to_en(name):
     name = str(name).strip()
-    return CN_DICT.get(name, name)
+    return CN_TO_EN.get(name, name)
+
+def translate_to_cn(name):
+    name = str(name).strip()
+    return EN_TO_CN.get(name, name)
 
 def _std(df):
     df = df.copy()
     rename_dict = {"HxG": "xg_home", "AxG": "xg_away", 
                    "AvgH": "odds_h", "AvgD": "odds_d", "AvgA": "odds_a",
-                   "B365H": "b365_h", "B365D": "b365_d", "B365A": "b365_a",
-                   "Avg>2.5": "odds_over", "Avg<2.5": "odds_under"}
+                   "B365H": "b365_h", "B365D": "b365_d", "B365A": "b365_a"}
     df = df.rename(columns=rename_dict)
     
     if "odds_h" not in df.columns and "b365_h" in df.columns:
@@ -190,11 +197,14 @@ def load_fixtures():
         code = str(r["league"]).strip()
         if code not in LEAGUE_NAMES:
             continue
-        out.append((code, translate(r["home"]), translate(r["away"]), str(r["home"]).strip(), str(r["away"]).strip()))
+        h_en = translate_to_en(r["home"])
+        a_en = translate_to_en(r["away"])
+        out.append((code, h_en, a_en))
     return out
 
 def main():
-    print(f"  全自动预测系统 (赔率+大小球版) | {datetime.now():%Y-%m-%d %H:%M}")
+    load_dict()
+    print(f"  全自动预测系统 (中文输出版) | {datetime.now():%Y-%m-%d %H:%M}")
     targets = load_fixtures()
     print(f"从 fixtures.csv 读到 {len(targets)} 场比赛")
 
@@ -205,7 +215,7 @@ def main():
     cache = {}
     fitted = {}
 
-    for code, h_en, a_en, h_cn, a_cn in targets:
+    for code, h_en, a_en in targets:
         name = LEAGUE_NAMES[code]
 
         if code not in cache:
@@ -222,17 +232,20 @@ def main():
             fitted[code] = DixonColes(use_xg=True).fit(cache[code])
 
         model = fitted[code]
+        
+        # 强制转换为中文，用于输出显示
+        h_display = translate_to_cn(h_en)
+        a_display = translate_to_cn(a_en)
+
         if h_en not in model._idx or a_en not in model._idx:
-            print(f"[{name}] {h_cn} vs {a_cn}: 队名不在数据中，跳过")
+            print(f"[{name}] {h_display} vs {a_display}: 队名不在数据中，跳过")
             continue
 
-        # 1. 提取模型纯数据概率 (矩阵)
         g, lh, la = model.predict(h_en, a_en)
         model_hw = float(np.tril(g, -1).sum())
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
 
-        # 2. 查找该场比赛的赔率，进行胜平负融合
         df_league = cache[code]
         match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
         
@@ -251,7 +264,6 @@ def main():
                 final_dr = MARKET_WEIGHT * mkt_dr + (1 - MARKET_WEIGHT) * model_dr
                 final_aw = MARKET_WEIGHT * mkt_aw + (1 - MARKET_WEIGHT) * model_aw
                 
-                # 调整矩阵
                 scale_h = final_hw / model_hw if model_hw > 0 else 1
                 scale_d = final_dr / model_dr if model_dr > 0 else 1
                 scale_a = final_aw / model_aw if model_aw > 0 else 1
@@ -263,15 +275,12 @@ def main():
                         else: g[h, a] *= scale_a
                 g /= g.sum()
 
-        # 3. 计算大小球和双方进球
         over_25 = 0.0
         btts_yes = 0.0
         for h in range(g.shape[0]):
             for a in range(g.shape[1]):
-                if h + a >= 3:
-                    over_25 += g[h, a]
-                if h > 0 and a > 0:
-                    btts_yes += g[h, a]
+                if h + a >= 3: over_25 += g[h, a]
+                if h > 0 and a > 0: btts_yes += g[h, a]
         
         under_25 = 1.0 - over_25
         btts_no = 1.0 - btts_yes
@@ -279,13 +288,12 @@ def main():
         scores = [(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])]
         scores.sort(key=lambda x: x[1], reverse=True)
 
-        print(f"[{name}] {h_cn} vs {a_cn}")
-        print(f"  主胜 {final_hw:.1%} | 平局 {final_dr:.1%} | 客胜 {final_aw:.1%}")
-        print(f"  大2.5球 {over_25:.1%} | 小2.5球 {under_25:.1%}")
-        print(f"  双方进球: 是 {btts_yes:.1%} | 否 {btts_no:.1%}")
+        print(f"[{name}] {h_display} vs {a_display}")
 
         results.append({
-            "league": name, "home": h_cn, "away": a_cn,
+            "league": name, 
+            "home": h_display, 
+            "away": a_display,
             "home_win": round(final_hw, 4), "draw": round(final_dr, 4), "away_win": round(final_aw, 4),
             "over_2_5": round(over_25, 4), "under_2_5": round(under_25, 4),
             "btts_yes": round(btts_yes, 4), "btts_no": round(btts_no, 4),
