@@ -26,3 +26,8 @@ jobs:
           git add predictions_*.csv predictions_*.json
           git diff --staged --quiet || git commit -m "Predictions $(date -u +%Y-%m-%d)"
           git push
+      - run: python evaluate.py
+      - run: |
+          git add performance.md
+          git diff --staged --quiet || git commit -m "Update performance $(date -u +%Y-%m-%d)"
+          git push
