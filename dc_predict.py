@@ -13,7 +13,6 @@ warnings.filterwarnings("ignore")
 
 LOCAL_CSV = "fd_with_xg_2526.csv"
 FIXTURES_CSV = "fixtures.csv"
-DICT_CSV = "teams_cn.csv"
 SEASON_2627 = "2627"
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 
@@ -26,18 +25,35 @@ MAX_GOALS = 8
 TOP_N = 6
 MARKET_WEIGHT = 0.5
 
-# 双向字典
-CN_TO_EN = {}
-EN_TO_CN = {}
-
-def load_dict():
-    global CN_TO_EN, EN_TO_CN
-    try:
-        df = pd.read_csv(DICT_CSV, encoding="utf-8-sig")
-        CN_TO_EN = dict(zip(df["cn"].str.strip(), df["en"].str.strip()))
-        EN_TO_CN = dict(zip(df["en"].str.strip(), df["cn"].str.strip()))
-    except Exception as e:
-        print(f"警告: 字典文件 {DICT_CSV} 加载失败，将使用纯英文名。")
+# 直接把字典写死在代码里，绝对生效
+EN_TO_CN = {
+    "Man United": "曼联", "Man City": "曼城", "Liverpool": "利物浦", "Arsenal": "阿森纳", "Chelsea": "切尔西",
+    "Tottenham": "热刺", "Newcastle": "纽卡", "Aston Villa": "阿斯顿维拉", "Brighton": "布莱顿",
+    "West Ham": "西汉姆联", "Crystal Palace": "水晶宫", "Wolves": "狼队", "Bournemouth": "伯恩茅斯",
+    "Fulham": "富勒姆", "Everton": "埃弗顿", "Brentford": "布伦特福德", "Nott'm Forest": "诺丁汉森林",
+    "Leicester": "莱斯特城", "Ipswich": "伊普斯维奇", "Southampton": "南安普顿",
+    "Leeds": "利兹联", "Sunderland": "桑德兰", "Burnley": "伯恩利", "Sheffield United": "谢菲联",
+    "Real Madrid": "皇马", "Barcelona": "巴萨", "Ath Madrid": "马竞", "Ath Bilbao": "毕尔巴鄂竞技",
+    "Sociedad": "皇家社会", "Betis": "皇家贝蒂斯", "Villarreal": "比利亚雷亚尔", "Valencia": "瓦伦西亚",
+    "Girona": "赫罗纳", "Celta": "塞尔塔", "Vallecano": "巴列卡诺", "Osasuna": "奥萨苏纳",
+    "Mallorca": "马洛卡", "Getafe": "赫塔菲", "Alaves": "阿拉维斯", "Las Palmas": "拉斯帕尔马斯",
+    "Leganes": "莱加内斯", "Valladolid": "巴拉多利德", "Espanol": "西班牙人", "Sevilla": "塞维利亚", "Oviedo": "奥维耶多",
+    "Levante": "莱万特",
+    "Bayern Munich": "拜仁", "Leverkusen": "勒沃库森", "Dortmund": "多特蒙德", "RB Leipzig": "莱比锡红牛",
+    "Eintracht Frankfurt": "法兰克福", "Stuttgart": "斯图加特", "Freiburg": "弗莱堡", "Wolfsburg": "沃尔夫斯堡",
+    "Mainz": "美因茨", "Hoffenheim": "霍芬海姆", "Augsburg": "奥格斯堡", "Werder Bremen": "不莱梅",
+    "Union Berlin": "柏林联合", "M'gladbach": "门兴", "St Pauli": "圣保利", "Heidenheim": "海登海姆",
+    "Holstein Kiel": "荷尔斯泰因基尔", "Bochum": "波鸿", "Hamburg": "汉堡", "FC Koln": "科隆",
+    "Inter": "国米", "Milan": "AC米兰", "Juventus": "尤文图斯", "Napoli": "那不勒斯", "Roma": "罗马",
+    "Lazio": "拉齐奥", "Atalanta": "亚特兰大", "Fiorentina": "佛罗伦萨", "Bologna": "博洛尼亚",
+    "Torino": "都灵", "Udinese": "乌迪内斯", "Genoa": "热那亚", "Cagliari": "卡利亚里", "Lecce": "莱切",
+    "Verona": "维罗纳", "Empoli": "恩波利", "Parma": "帕尔马", "Como": "科莫", "Venezia": "威尼斯", "Monza": "蒙扎",
+    "Paris SG": "巴黎圣日耳曼", "Monaco": "摩纳哥", "Marseille": "马赛", "Lille": "里尔", "Lyon": "里昂",
+    "Nice": "尼斯", "Lens": "朗斯", "Rennes": "雷恩", "Strasbourg": "斯特拉斯堡", "Brest": "布雷斯特",
+    "Toulouse": "图卢兹", "Montpellier": "蒙彼利埃", "Nantes": "南特", "Reims": "兰斯",
+    "Auxerre": "欧塞尔", "Angers": "昂热", "Le Havre": "勒阿弗尔", "St Etienne": "圣埃蒂安", "Metz": "梅斯", "Lorient": "洛里昂", "Paris FC": "巴黎FC"
+}
+CN_TO_EN = {v: k for k, v in EN_TO_CN.items()}
 
 def translate_to_en(name):
     name = str(name).strip()
@@ -203,8 +219,7 @@ def load_fixtures():
     return out
 
 def main():
-    load_dict()
-    print(f"  全自动预测系统 (中文输出版) | {datetime.now():%Y-%m-%d %H:%M}")
+    print(f"  全自动预测系统 (中文引擎版) | {datetime.now():%Y-%m-%d %H:%M}")
     targets = load_fixtures()
     print(f"从 fixtures.csv 读到 {len(targets)} 场比赛")
 
@@ -233,7 +248,6 @@ def main():
 
         model = fitted[code]
         
-        # 强制转换为中文，用于输出显示
         h_display = translate_to_cn(h_en)
         a_display = translate_to_cn(a_en)
 
@@ -287,8 +301,6 @@ def main():
 
         scores = [(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])]
         scores.sort(key=lambda x: x[1], reverse=True)
-
-        print(f"[{name}] {h_display} vs {a_display}")
 
         results.append({
             "league": name, 
