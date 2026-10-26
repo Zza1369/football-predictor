@@ -24,6 +24,7 @@ LEAGUE_NAMES = {
 
 MAX_GOALS = 8
 TOP_N = 6
+MARKET_WEIGHT = 0.5  # 市场赔率在最终预测中的权重
 
 def load_dict():
     try:
@@ -40,14 +41,25 @@ def translate(name):
 
 def _std(df):
     df = df.copy()
-    df = df.rename(columns={"HxG": "xg_home", "AxG": "xg_away"})
+    rename_dict = {"HxG": "xg_home", "AxG": "xg_away", 
+                   "AvgH": "odds_h", "AvgD": "odds_d", "AvgA": "odds_a",
+                   "B365H": "b365_h", "B365D": "b365_d", "B365A": "b365_a",
+                   "Avg>2.5": "odds_over", "Avg<2.5": "odds_under"}
+    df = df.rename(columns=rename_dict)
+    
+    if "odds_h" not in df.columns and "b365_h" in df.columns:
+        df["odds_h"], df["odds_d"], df["odds_a"] = df["b365_h"], df["b365_d"], df["b365_a"]
+        
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce")
-    df = df.dropna(subset=["date", "hg", "ag"])
-    df["hg"] = df["hg"].astype(int)
-    df["ag"] = df["ag"].astype(int)
-    df["xg_home"] = pd.to_numeric(df.get("xg_home"), errors="coerce")
-    df["xg_away"] = pd.to_numeric(df.get("xg_away"), errors="coerce")
-    return df[["date", "home", "away", "hg", "ag", "xg_home", "xg_away"]]
+    df = df.dropna(subset=["date"])
+    
+    for col in ["xg_home", "xg_away", "odds_h", "odds_d", "odds_a"]:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors="coerce")
+        else:
+            df[col] = np.nan
+            
+    return df[["date", "home", "away", "hg", "ag", "xg_home", "xg_away", "odds_h", "odds_d", "odds_a"]]
 
 def load_league(code):
     frames = []
@@ -65,18 +77,15 @@ def load_league(code):
         r.raise_for_status()
         text = r.content.decode("utf-8-sig", errors="replace")
         raw = pd.read_csv(io.StringIO(text))
-        raw = raw.rename(columns={
-            "Date": "date", "HomeTeam": "home", "AwayTeam": "away",
-            "FTHG": "hg", "FTAG": "ag",
-        })
+        raw = raw.rename(columns={"Date": "date", "HomeTeam": "home", "AwayTeam": "away", "FTHG": "hg", "FTAG": "ag"})
         frames.append(_std(raw))
     except Exception as e:
-        print(f"    {code} 2627 跳过: {type(e).__name__}")
+        pass
 
     if not frames:
         raise RuntimeError(f"{code} 无数据")
     df = pd.concat(frames, ignore_index=True)
-    df = df.drop_duplicates(subset=["date", "home", "away"]).sort_values("date")
+    df = df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date")
     return df.reset_index(drop=True)
 
 def poisson_deviance(y, mu):
@@ -104,40 +113,37 @@ class DixonColes:
         lh = np.exp(a[hi] - d[ai] + h)
         la = np.exp(a[ai] - d[hi])
         if self.use_xg:
-            loss = poisson_deviance(df["xg_home"].values, lh) + \
-                   poisson_deviance(df["xg_away"].values, la)
+            loss = poisson_deviance(df["xg_home"].values, lh) + poisson_deviance(df["xg_away"].values, la)
         else:
-            loss = -(poisson.logpmf(df["hg"].values, lh) +
-                     poisson.logpmf(df["ag"].values, la))
+            loss = -(poisson.logpmf(df["hg"].values, lh) + poisson.logpmf(df["ag"].values, la))
         return np.sum(w * loss)
 
     def fit(self, df):
-        df = df.copy()
-        teams = sorted(set(df["home"]) | set(df["away"]))
+        df_fit_all = df.dropna(subset=["hg", "ag"]).copy()
+        teams = sorted(set(df_fit_all["home"]) | set(df_fit_all["away"]))
         self._idx = {t: i for i, t in enumerate(teams)}
         n = len(teams)
-        df["home_idx"] = df["home"].map(self._idx)
-        df["away_idx"] = df["away"].map(self._idx)
-        days = (df["date"].max() - df["date"]).dt.days.values
+        df_fit_all["home_idx"] = df_fit_all["home"].map(self._idx)
+        df_fit_all["away_idx"] = df_fit_all["away"].map(self._idx)
+        days = (df_fit_all["date"].max() - df_fit_all["date"]).dt.days.values
         w = np.exp(-self.xi * days)
 
         if self.use_xg:
-            mask = (df["xg_home"].notna() & df["xg_away"].notna()).values
-            cov = mask.sum() / len(df) if len(df) else 0
-            if cov < 0.5:
+            mask = (df_fit_all["xg_home"].notna() & df_fit_all["xg_away"].notna()).values
+            if mask.sum() / len(df_fit_all) < 0.5:
                 self.use_xg = False
             else:
-                df_fit = df[mask].reset_index(drop=True)
+                df_fit = df_fit_all[mask].reset_index(drop=True)
                 w_fit = w[mask]
         if not self.use_xg:
-            df_fit = df.reset_index(drop=True)
+            df_fit = df_fit_all.reset_index(drop=True)
             w_fit = w
 
         x0 = np.concatenate([np.zeros(n), np.zeros(n), [0.1]])
         res = minimize(self._loss, x0, args=(df_fit, n, w_fit),
                        method="L-BFGS-B", options={"maxiter": 1000, "ftol": 1e-10})
         self.attack, self.defence, self.home_adv = self._unpack(res.x, n)
-        self._fit_rho(df, w)
+        self._fit_rho(df_fit_all, w)
         return self
 
     def _fit_rho(self, df, w):
@@ -148,14 +154,10 @@ class DixonColes:
 
         def nll(rho):
             t = np.ones_like(lh)
-            m00 = (hg == 0) & (ag == 0)
-            m01 = (hg == 0) & (ag == 1)
-            m10 = (hg == 1) & (ag == 0)
-            m11 = (hg == 1) & (ag == 1)
-            t[m00] = 1 - lh[m00] * la[m00] * rho
-            t[m01] = 1 + lh[m01] * rho
-            t[m10] = 1 + la[m10] * rho
-            t[m11] = 1 - rho
+            m00 = (hg == 0) & (ag == 0); m01 = (hg == 0) & (ag == 1)
+            m10 = (hg == 1) & (ag == 0); m11 = (hg == 1) & (ag == 1)
+            t[m00] = 1 - lh[m00] * la[m00] * rho; t[m01] = 1 + lh[m01] * rho
+            t[m10] = 1 + la[m10] * rho; t[m11] = 1 - rho
             t = np.clip(t, 1e-10, None)
             ll = poisson.logpmf(hg, lh) + poisson.logpmf(ag, la) + np.log(t)
             return -np.sum(w * ll)
@@ -181,28 +183,22 @@ def load_fixtures():
     try:
         df = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig")
     except FileNotFoundError:
-        print(f"  找不到 {FIXTURES_CSV}")
         return []
     df = df.dropna(subset=["league", "home", "away"])
     out = []
     for _, r in df.iterrows():
         code = str(r["league"]).strip()
         if code not in LEAGUE_NAMES:
-            print(f"  跳过未知联赛代码: {code}")
             continue
-        h_en = translate(r["home"])
-        a_en = translate(r["away"])
-        out.append((code, h_en, a_en, str(r["home"]).strip(), str(r["away"]).strip()))
+        out.append((code, translate(r["home"]), translate(r["away"]), str(r["home"]).strip(), str(r["away"]).strip()))
     return out
 
 def main():
-    print(f"  全自动预测系统 | {datetime.now():%Y-%m-%d %H:%M}")
+    print(f"  全自动预测系统 (赔率+大小球版) | {datetime.now():%Y-%m-%d %H:%M}")
     targets = load_fixtures()
     print(f"从 fixtures.csv 读到 {len(targets)} 场比赛")
 
     if not targets:
-        today = datetime.now().strftime("%Y-%m-%d")
-        pd.DataFrame([{"message": "no fixtures"}]).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
         return
 
     results = []
@@ -213,60 +209,93 @@ def main():
         name = LEAGUE_NAMES[code]
 
         if code not in cache:
-            print(f"[{name}] 加载数据 ...")
             try:
                 cache[code] = load_league(code)
-            except Exception as e:
-                print(f"  加载失败: {e}, 跳过 {h_cn} vs {a_cn}")
+            except Exception:
                 cache[code] = None
-                continue
-
+                
         if cache[code] is None:
             continue
 
         if code not in fitted:
-            print(f"[{name}] 拟合 ...")
-            try:
-                fitted[code] = DixonColes(use_xg=True).fit(cache[code])
-            except Exception as e:
-                print(f"  拟合失败: {e}, 跳过")
-                fitted[code] = None
-                continue
+            print(f"[{name}] 正在拟合模型 ...")
+            fitted[code] = DixonColes(use_xg=True).fit(cache[code])
 
         model = fitted[code]
-        if model is None:
-            continue
-
         if h_en not in model._idx or a_en not in model._idx:
-            print(f"[{name}] {h_cn} vs {a_cn} (翻译为 {h_en} vs {a_en}): 队名不在数据中，跳过")
-            print(f"  可用球队示例: {sorted(model._idx.keys())[:8]}")
+            print(f"[{name}] {h_cn} vs {a_cn}: 队名不在数据中，跳过")
             continue
 
+        # 1. 提取模型纯数据概率 (矩阵)
         g, lh, la = model.predict(h_en, a_en)
-        hw = float(np.tril(g, -1).sum())
-        dr = float(np.trace(g))
-        aw = float(np.triu(g, 1).sum())
+        model_hw = float(np.tril(g, -1).sum())
+        model_dr = float(np.trace(g))
+        model_aw = float(np.triu(g, 1).sum())
+
+        # 2. 查找该场比赛的赔率，进行胜平负融合
+        df_league = cache[code]
+        match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
+        
+        final_hw, final_dr, final_aw = model_hw, model_dr, model_aw
+        
+        if len(match_rows) > 0:
+            latest_match = match_rows.iloc[-1]
+            oh, od, oa = latest_match["odds_h"], latest_match["odds_d"], latest_match["odds_a"]
+            
+            if pd.notna(oh) and pd.notna(od) and pd.notna(oa):
+                imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
+                total_imp = imp_h + imp_d + imp_a
+                mkt_hw, mkt_dr, mkt_aw = imp_h / total_imp, imp_d / total_imp, imp_a / total_imp
+                
+                final_hw = MARKET_WEIGHT * mkt_hw + (1 - MARKET_WEIGHT) * model_hw
+                final_dr = MARKET_WEIGHT * mkt_dr + (1 - MARKET_WEIGHT) * model_dr
+                final_aw = MARKET_WEIGHT * mkt_aw + (1 - MARKET_WEIGHT) * model_aw
+                
+                # 调整矩阵
+                scale_h = final_hw / model_hw if model_hw > 0 else 1
+                scale_d = final_dr / model_dr if model_dr > 0 else 1
+                scale_a = final_aw / model_aw if model_aw > 0 else 1
+                
+                for h in range(g.shape[0]):
+                    for a in range(g.shape[1]):
+                        if h > a: g[h, a] *= scale_h
+                        elif h == a: g[h, a] *= scale_d
+                        else: g[h, a] *= scale_a
+                g /= g.sum()
+
+        # 3. 计算大小球和双方进球
+        over_25 = 0.0
+        btts_yes = 0.0
+        for h in range(g.shape[0]):
+            for a in range(g.shape[1]):
+                if h + a >= 3:
+                    over_25 += g[h, a]
+                if h > 0 and a > 0:
+                    btts_yes += g[h, a]
+        
+        under_25 = 1.0 - over_25
+        btts_no = 1.0 - btts_yes
+
         scores = [(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])]
         scores.sort(key=lambda x: x[1], reverse=True)
 
-        print(f"[{name}] {h_cn} vs {a_cn}  主胜 {hw:.1%} | 平局 {dr:.1%} | 客胜 {aw:.1%}")
+        print(f"[{name}] {h_cn} vs {a_cn}")
+        print(f"  主胜 {final_hw:.1%} | 平局 {final_dr:.1%} | 客胜 {final_aw:.1%}")
+        print(f"  大2.5球 {over_25:.1%} | 小2.5球 {under_25:.1%}")
+        print(f"  双方进球: 是 {btts_yes:.1%} | 否 {btts_no:.1%}")
 
         results.append({
             "league": name, "home": h_cn, "away": a_cn,
-            "lambda_home": round(lh, 3), "lambda_away": round(la, 3),
-            "home_win": round(hw, 4), "draw": round(dr, 4), "away_win": round(aw, 4),
+            "home_win": round(final_hw, 4), "draw": round(final_dr, 4), "away_win": round(final_aw, 4),
+            "over_2_5": round(over_25, 4), "under_2_5": round(under_25, 4),
+            "btts_yes": round(btts_yes, 4), "btts_no": round(btts_no, 4),
             "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5]),
         })
 
     today = datetime.now().strftime("%Y-%m-%d")
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
-        with open(f"predictions_{today}.json", "w", encoding="utf-8") as f:
-            json.dump(results, f, ensure_ascii=False, indent=2)
-        print(f"已写入 predictions_{today}.csv / .json")
-    else:
-        print("所有比赛均被跳过。")
-        pd.DataFrame([{"message": "no predictions"}]).to_csv(f"predictions_{today}.csv", index=False, encoding="utf-8-sig")
+        print(f"已写入 predictions_{today}.csv")
 
 if __name__ == "__main__":
     main()
