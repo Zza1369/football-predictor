@@ -13,21 +13,28 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+      
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+          
       - run: pip install -r requirements.txt
-      - env:
+      
+      - name: 运行预测
+        env:
           TZ: Asia/Shanghai
+          SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}   # <--- 就是这行！把钥匙传进去
         run: python dc_predict.py
-      - run: |
+        
+      - name: 运行复盘评估
+        env:
+          TZ: Asia/Shanghai
+        run: python evaluate.py
+        
+      - name: 提交所有更新
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add predictions_*.csv predictions_*.json
-          git diff --staged --quiet || git commit -m "Predictions $(date -u +%Y-%m-%d)"
-          git push
-      - run: python evaluate.py
-      - run: |
-          git add performance.md
-          git diff --staged --quiet || git commit -m "Update performance $(date -u +%Y-%m-%d)"
+          git add predictions_*.csv predictions_*.json performance.md
+          git diff --staged --quiet || git commit -m "Update Predictions & Performance $(date -u +%Y-%m-%d)"
           git push
