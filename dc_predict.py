@@ -24,9 +24,8 @@ LEAGUE_NAMES = {
 }
 
 MAX_GOALS = 8
-# 核心改动：双模型权重
-WEIGHT_A = 0.5  # 模型A：50%数据 + 50%赔率
-WEIGHT_B = 0.8  # 模型B：20%数据 + 80%赔率
+WEIGHT_A = 0.5 
+WEIGHT_B = 0.8 
 VALUE_THRESHOLD = 0.05
 
 EN_TO_CN = {
@@ -178,12 +177,7 @@ class DixonColes:
 
 def get_performance_report(actual_results):
     pred_files = sorted(glob.glob("predictions_*.csv"))
-    
-    stats = {
-        "total": 0,
-        "A_wl": 0, "B_wl": 0,
-        "A_score": 0, "B_score": 0
-    }
+    stats = {"total": 0, "A_wl": 0, "B_wl": 0, "A_score": 0, "B_score": 0}
     details = []
     
     for f in pred_files:
@@ -209,15 +203,13 @@ def get_performance_report(actual_results):
                         actual_h, actual_a = matched_match["hg"], matched_match["ag"]
                         act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
                         
-                        # 模型A
-                        top_a = str(row.get("top_scores_A", row["top_scores"])).split(";")[0].split(":")[0].strip()
+                        top_a = str(row.get("top_scores_A", row.get("top_scores", ""))).split(";")[0].split(":")[0].strip()
                         pred_h_a, pred_a_a = map(int, top_a.split("-"))
                         pred_res_a = "H" if pred_h_a > pred_a_a else ("D" if pred_h_a == pred_a_a else "A")
                         A_wl_ok = (act_res == pred_res_a)
                         A_score_ok = (pred_h_a == actual_h and pred_a_a == actual_a)
                         
-                        # 模型B
-                        top_b = str(row.get("top_scores_B", row["top_scores"])).split(";")[0].split(":")[0].strip()
+                        top_b = str(row.get("top_scores_B", row.get("top_scores", ""))).split(";")[0].split(":")[0].strip()
                         pred_h_b, pred_a_b = map(int, top_b.split("-"))
                         pred_res_b = "H" if pred_h_b > pred_a_b else ("D" if pred_h_b == pred_a_b else "A")
                         B_wl_ok = (act_res == pred_res_b)
@@ -267,8 +259,8 @@ def main():
     except: return
 
     results, cache, fitted = [], {}, {}
-    
     actual_results = {}
+    
     for code in LEAGUE_NAMES.keys():
         try:
             df = load_league(code)
@@ -350,17 +342,28 @@ def main():
         results.append({
             "league": name, "home": h_cn, "away": a_cn,
             "home_win_A": round(A_hw, 4), "draw_A": round(A_dr, 4), "away_win_A": round(A_aw, 4),
-            "top_scores_A": "; ".join(f"{s}:{p:.3f}" for s, p in scores_A[:3]),
+            "top_scores_A": "; ".join(f"{s}:{p:.3f}" for s, p in scores_A[:5]),
             "home_win_B": round(B_hw, 4), "draw_B": round(B_dr, 4), "away_win_B": round(B_aw, 4),
-            "top_scores_B": "; ".join(f"{s}:{p:.3f}" for s, p in scores_B[:3]),
-            "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores_A[:5]) # 兼容老版
+            "top_scores_B": "; ".join(f"{s}:{p:.3f}" for s, p in scores_B[:5]),
         })
         
+        # 恢复大小球/亚盘展示
+        ah_win = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a >= 2)
+        ah_push = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a == 1)
+        ah_lose = 1 - ah_win - ah_push
+        over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
+        btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
+
+        top3_A = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
+        top3_B = "、".join([f"`{s[0]}`" for s in scores_B[:3]])
+
         md += f"### [{name}] {h_cn} vs {a_cn}\n"
-        md += f"🅰️ (50%): 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-        md += f"   └ 比分: `{scores_A[0][0]}`({scores_A[0][1]:.1%})\n"
-        md += f"🅱️ (80%): 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-        md += f"   └ 比分: `{scores_B[0][0]}`({scores_B[0][1]:.1%})\n\n"
+        md += f"- **主让一球(-1)**: 赢盘 {ah_win:.1%} | 走水 {ah_push:.1%} | 输盘 {ah_lose:.1%}\n"
+        md += f"- **大小/双方进球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
+        md += f"🅰️ **50%赔率**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+        md += f"   └ 推荐比分: {top3_A}\n"
+        md += f"🅱️ **80%赔率**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
+        md += f"   └ 推荐比分: {top3_B}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
