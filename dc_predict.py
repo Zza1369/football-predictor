@@ -306,32 +306,37 @@ def main():
         match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
         if len(match_rows) == 0: match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
 
+        has_odds = False
         if len(match_rows) > 0 and pd.notna(match_rows.iloc[-1]["odds_h"]):
             oh, od, oa = match_rows.iloc[-1]["odds_h"], match_rows.iloc[-1]["odds_d"], match_rows.iloc[-1]["odds_a"]
-            imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
-            tot = imp_h + imp_d + imp_a
-            mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
+            if pd.notna(oh) and pd.notna(od) and pd.notna(oa):
+                has_odds = True
+                imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
+                tot = imp_h + imp_d + imp_a
+                mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-            # 模型 A
-            A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
-            A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
-            A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
-            g_A = g.copy()
-            g_A[np.tril_indices(9, -1)] *= A_hw/model_hw if model_hw > 0 else 1
-            g_A[np.diag_indices(9)] *= A_dr/model_dr if model_dr > 0 else 1
-            g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
-            g_A /= g_A.sum()
-            
-            # 模型 B
-            B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
-            B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
-            B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
-            g_B = g.copy()
-            g_B[np.tril_indices(9, -1)] *= B_hw/model_hw if model_hw > 0 else 1
-            g_B[np.diag_indices(9)] *= B_dr/model_dr if model_dr > 0 else 1
-            g_B[np.triu_indices(9, 1)] *= B_aw/model_aw if model_aw > 0 else 1
-            g_B /= g_B.sum()
-        else:
+                # 模型 A
+                A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
+                A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
+                A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
+                g_A = g.copy()
+                g_A[np.tril_indices(9, -1)] *= A_hw/model_hw if model_hw > 0 else 1
+                g_A[np.diag_indices(9)] *= A_dr/model_dr if model_dr > 0 else 1
+                g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
+                g_A /= g_A.sum()
+                
+                # 模型 B
+                B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
+                B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
+                B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
+                g_B = g.copy()
+                g_B[np.tril_indices(9, -1)] *= B_hw/model_hw if model_hw > 0 else 1
+                g_B[np.diag_indices(9)] *= B_dr/model_dr if model_dr > 0 else 1
+                g_B[np.triu_indices(9, 1)] *= B_aw/model_aw if model_aw > 0 else 1
+                g_B /= g_B.sum()
+
+        if not has_odds:
+            # 没有赔率，退化回纯模型
             A_hw, A_dr, A_aw = model_hw, model_dr, model_aw
             B_hw, B_dr, B_aw = model_hw, model_dr, model_aw
             g_A, g_B = g, g
@@ -347,23 +352,27 @@ def main():
             "top_scores_B": "; ".join(f"{s}:{p:.3f}" for s, p in scores_B[:5]),
         })
         
-        # 恢复大小球/亚盘展示
         ah_win = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a >= 2)
         ah_push = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a == 1)
         ah_lose = 1 - ah_win - ah_push
         over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        top3_A = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
-        top3_B = "、".join([f"`{s[0]}`" for s in scores_B[:3]])
-
         md += f"### [{name}] {h_cn} vs {a_cn}\n"
         md += f"- **主让一球(-1)**: 赢盘 {ah_win:.1%} | 走水 {ah_push:.1%} | 输盘 {ah_lose:.1%}\n"
         md += f"- **大小/双方进球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
-        md += f"🅰️ **50%赔率**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-        md += f"   └ 推荐比分: {top3_A}\n"
-        md += f"🅱️ **80%赔率**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-        md += f"   └ 推荐比分: {top3_B}\n\n"
+
+        if has_odds:
+            top3_A = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
+            top3_B = "、".join([f"`{s[0]}`" for s in scores_B[:3]])
+            md += f"🅰️ **50%赔率**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+            md += f"   └ 推荐比分: {top3_A}\n"
+            md += f"🅱️ **80%赔率**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
+            md += f"   └ 推荐比分: {top3_B}\n\n"
+        else:
+            top3_pure = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
+            md += f"💡 **[纯数据]** (暂无实时赔率): 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+            md += f"   └ 推荐比分: {top3_pure}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
