@@ -24,7 +24,9 @@ LEAGUE_NAMES = {
 }
 
 MAX_GOALS = 8
-MARKET_WEIGHT = 0.5
+# 核心改动：双模型权重
+WEIGHT_A = 0.5  # 模型A：50%数据 + 50%赔率
+WEIGHT_B = 0.8  # 模型B：20%数据 + 80%赔率
 VALUE_THRESHOLD = 0.05
 
 EN_TO_CN = {
@@ -175,13 +177,12 @@ class DixonColes:
         return g, lh, la
 
 def get_performance_report(actual_results):
-    """生成全维度战绩报告 (时间锁+所有玩法)"""
     pred_files = sorted(glob.glob("predictions_*.csv"))
     
     stats = {
         "total": 0,
-        "win_loss_hits": 0, "score_hits": 0,
-        "ah_hits": 0, "ou_hits": 0, "btts_hits": 0
+        "A_wl": 0, "B_wl": 0,
+        "A_score": 0, "B_score": 0
     }
     details = []
     
@@ -206,99 +207,67 @@ def get_performance_report(actual_results):
                     
                     if matched_match:
                         actual_h, actual_a = matched_match["hg"], matched_match["ag"]
-                        
-                        # 1. 胜平负判断
-                        top_score_str = str(row["top_scores"]).split(";")[0].split(":")[0].strip()
-                        pred_h, pred_a = map(int, top_score_str.split("-"))
                         act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
-                        pred_res = "H" if pred_h > pred_a else ("D" if pred_h == pred_a else "A")
-                        win_loss_ok = (act_res == pred_res)
                         
-                        # 2. 比分判断
-                        score_ok = (pred_h == actual_h and pred_a == actual_a)
+                        # 模型A
+                        top_a = str(row.get("top_scores_A", row["top_scores"])).split(";")[0].split(":")[0].strip()
+                        pred_h_a, pred_a_a = map(int, top_a.split("-"))
+                        pred_res_a = "H" if pred_h_a > pred_a_a else ("D" if pred_h_a == pred_a_a else "A")
+                        A_wl_ok = (act_res == pred_res_a)
+                        A_score_ok = (pred_h_a == actual_h and pred_a_a == actual_a)
                         
-                        # 3. 让球盘(-1)判断
-                        ah_win = row.get("ah_home_win", 0)
-                        ah_push = row.get("ah_push", 0)
-                        ah_lose = row.get("ah_away_win", 0)
-                        ah_choice = max(ah_win, ah_push, ah_lose)
-                        act_ah = "win" if actual_h - actual_a >= 2 else ("push" if actual_h - actual_a == 1 else "lose")
-                        pred_ah = "win" if ah_choice == ah_win else ("push" if ah_choice == ah_push else "lose")
-                        ah_ok = (act_ah == pred_ah)
-
-                        # 4. 大小球判断
-                        over_25 = row.get("over_2_5", 0.5)
-                        pred_over = over_25 > 0.5
-                        act_over = (actual_h + actual_a >= 3)
-                        ou_ok = (pred_over == act_over)
-
-                        # 5. 双方进球判断
-                        btts_yes = row.get("btts_yes", 0.5)
-                        pred_btts = btts_yes > 0.5
-                        act_btts = (actual_h > 0 and actual_a > 0)
-                        btts_ok = (pred_btts == act_btts)
+                        # 模型B
+                        top_b = str(row.get("top_scores_B", row["top_scores"])).split(";")[0].split(":")[0].strip()
+                        pred_h_b, pred_a_b = map(int, top_b.split("-"))
+                        pred_res_b = "H" if pred_h_b > pred_a_b else ("D" if pred_h_b == pred_a_b else "A")
+                        B_wl_ok = (act_res == pred_res_b)
+                        B_score_ok = (pred_h_b == actual_h and pred_a_b == actual_a)
 
                         stats["total"] += 1
-                        if win_loss_ok: stats["win_loss_hits"] += 1
-                        if score_ok: stats["score_hits"] += 1
-                        if ah_ok: stats["ah_hits"] += 1
-                        if ou_ok: stats["ou_hits"] += 1
-                        if btts_ok: stats["btts_hits"] += 1
+                        if A_wl_ok: stats["A_wl"] += 1
+                        if B_wl_ok: stats["B_wl"] += 1
+                        if A_score_ok: stats["A_score"] += 1
+                        if B_score_ok: stats["B_score"] += 1
                         
-                        # 存储明细用于微信排版
                         details.append({
-                            "date": date_str,
-                            "teams": f"{h_cn} vs {a_cn}",
-                            "pred": top_score_str,
+                            "date": date_str, "teams": f"{h_cn} vs {a_cn}",
                             "act": f"{actual_h}-{actual_a}",
-                            "wl": win_loss_ok,
-                            "ah": ah_ok,
-                            "sc": score_ok
+                            "pred_a": top_a, "pred_b": top_b,
+                            "a_wl": A_wl_ok, "b_wl": B_wl_ok,
+                            "a_sc": A_score_ok, "b_sc": B_score_ok
                         })
         except Exception: pass
 
-    md = f"### 📊 历史战绩回顾\n\n"
+    md = f"### 📊 历史战绩对比 (A: 50%赔率 | B: 80%赔率)\n\n"
     if stats["total"] > 0:
         t = stats["total"]
         md += f"**已结算 {t} 场**\n"
-        md += f"- 🎯 胜平负: **{stats['win_loss_hits']/t:.1%}**\n"
-        md += f"- ⚽ 精确比分: **{stats['score_hits']/t:.1%}**\n"
-        md += f"- ⚖️ 让球盘: **{stats['ah_hits']/t:.1%}**\n"
-        md += f"- 📈 大小球: **{stats['ou_hits']/t:.1%}**\n"
-        md += f"- 🥅 双方进球: **{stats['btts_hits']/t:.1%}**\n\n"
+        md += f"- 🎯 胜平负: 🅰️ **{stats['A_wl']/t:.1%}**  |  🅱️ **{stats['B_wl']/t:.1%}**\n"
+        md += f"- ⚽ 比分: 🅰️ **{stats['A_score']/t:.1%}**  |  🅱️ **{stats['B_score']/t:.1%}**\n\n"
         
         md += "**近期明细 (最近5场):**\n"
         for d in details[-5:]:
-            icon = "🟢" if d["wl"] else "🔴"
-            md += f"{icon} **{d['teams']}** ({d['date'][5:]})\n"
-            md += f"实际 `{d['act']}` | 预测 `{d['pred']}`\n"
-            md += f"└ 胜负 {'✅' if d['wl'] else '❌'} | 让球 {'✅' if d['ah'] else '❌'} | 比分 {'✅' if d['sc'] else '❌'}\n\n"
-            
+            md += f"⚔️ **{d['teams']}** ({d['date'][5:]}) | 实际 `{d['act']}`\n"
+            md += f"🅰️ 预测 `{d['pred_a']}` └ 胜负 {'✅' if d['a_wl'] else '❌'} | 比分 {'✅' if d['a_sc'] else '❌'}\n"
+            md += f"🅱️ 预测 `{d['pred_b']}` └ 胜负 {'✅' if d['b_wl'] else '❌'} | 比分 {'✅' if d['b_sc'] else '❌'}\n\n"
     else:
-        md += "暂无已完赛记录（或比赛还没踢）。\n"
+        md += "暂无已完赛记录。\n"
     return md
 
 def push_to_wechat(md_text):
     key = os.environ.get("SERVERCHAN_KEY")
     if not key: return
-    print("正在推送到微信...")
     try:
-        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
-        print("微信推送成功！")
-    except Exception as e:
-        print(f"微信推送异常: {e}")
+        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 双模型预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
+    except Exception: pass
 
 def main():
-    print(f"  终极量化预测系统 | {datetime.now():%Y-%m-%d %H:%M}")
-    
     try:
         fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
-    except:
-        return
+    except: return
 
     results, cache, fitted = [], {}, {}
     
-    # 1. 先拉取所有赛果，用于复盘
     actual_results = {}
     for code in LEAGUE_NAMES.keys():
         try:
@@ -309,9 +278,8 @@ def main():
                 actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
-    # 2. 生成今日预测报告
-    md = f"## ⚽ 今日模型预测 ({datetime.now().strftime('%m-%d')})\n\n"
-    if len(fixtures) == 0: md += "今日没有填写的预测比赛。\n\n"
+    md = f"## ⚽ 今日双模型预测 ({datetime.now().strftime('%m-%d')})\n"
+    md += "*(🅰️: 50%赔率融合 | 🅱️: 80%赔率融合)*\n\n"
 
     for _, r in fixtures.iterrows():
         code = str(r["league"]).strip()
@@ -343,62 +311,59 @@ def main():
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
 
-        final_hw, final_dr, final_aw = model_hw, model_dr, model_aw
         match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
         if len(match_rows) == 0: match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
 
-        val_flag_h, val_flag_a = "", ""
-        if len(match_rows) > 0:
+        if len(match_rows) > 0 and pd.notna(match_rows.iloc[-1]["odds_h"]):
             oh, od, oa = match_rows.iloc[-1]["odds_h"], match_rows.iloc[-1]["odds_d"], match_rows.iloc[-1]["odds_a"]
-            if pd.notna(oh) and pd.notna(od) and pd.notna(oa):
-                imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
-                tot = imp_h + imp_d + imp_a
-                mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
-                if model_hw - mkt_hw > VALUE_THRESHOLD: val_flag_h = "🔥 主胜有价值"
-                if model_aw - mkt_aw > VALUE_THRESHOLD: val_flag_a = "🔥 客胜有价值"
+            imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
+            tot = imp_h + imp_d + imp_a
+            mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-                final_hw = MARKET_WEIGHT * mkt_hw + (1 - MARKET_WEIGHT) * model_hw
-                final_dr = MARKET_WEIGHT * mkt_dr + (1 - MARKET_WEIGHT) * model_dr
-                final_aw = MARKET_WEIGHT * mkt_aw + (1 - MARKET_WEIGHT) * model_aw
-                
-                scale_h, scale_d, scale_a = final_hw/model_hw, final_dr/model_dr, final_aw/model_aw
-                for h in range(g.shape[0]):
-                    for a in range(g.shape[1]):
-                        if h > a: g[h, a] *= scale_h
-                        elif h == a: g[h, a] *= scale_d
-                        else: g[h, a] *= scale_a
-                g /= g.sum()
+            # 模型 A
+            A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
+            A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
+            A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
+            g_A = g.copy()
+            g_A[np.tril_indices(9, -1)] *= A_hw/model_hw if model_hw > 0 else 1
+            g_A[np.diag_indices(9)] *= A_dr/model_dr if model_dr > 0 else 1
+            g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
+            g_A /= g_A.sum()
+            
+            # 模型 B
+            B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
+            B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
+            B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
+            g_B = g.copy()
+            g_B[np.tril_indices(9, -1)] *= B_hw/model_hw if model_hw > 0 else 1
+            g_B[np.diag_indices(9)] *= B_dr/model_dr if model_dr > 0 else 1
+            g_B[np.triu_indices(9, 1)] *= B_aw/model_aw if model_aw > 0 else 1
+            g_B /= g_B.sum()
+        else:
+            A_hw, A_dr, A_aw = model_hw, model_dr, model_aw
+            B_hw, B_dr, B_aw = model_hw, model_dr, model_aw
+            g_A, g_B = g, g
 
-        ah_win = sum(g[h,a] for h in range(9) for a in range(9) if h-a >= 2)
-        ah_push = sum(g[h,a] for h in range(9) for a in range(9) if h-a == 1)
-        ah_lose = 1 - ah_win - ah_push
-        over_25 = sum(g[h,a] for h in range(9) for a in range(9) if h+a >= 3)
-        btts_yes = sum(g[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
+        scores_A = sorted([(f"{h}-{a}", float(g_A[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
+        scores_B = sorted([(f"{h}-{a}", float(g_B[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
 
-        scores = sorted([(f"{h}-{a}", float(g[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
-        top3_str = "、".join([f"**{s[0]}**({s[1]:.1%})" for s in scores[:3]])
-
-        # 将大小球、亚盘等数据存入 CSV，供复盘使用
         results.append({
             "league": name, "home": h_cn, "away": a_cn,
-            "home_win": round(final_hw, 4), "draw": round(final_dr, 4), "away_win": round(final_aw, 4),
-            "ah_home_win": round(ah_win, 4), "ah_push": round(ah_push, 4), "ah_away_win": round(ah_lose, 4),
-            "over_2_5": round(over_25, 4), "btts_yes": round(btts_yes, 4),
-            "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores[:5]),
+            "home_win_A": round(A_hw, 4), "draw_A": round(A_dr, 4), "away_win_A": round(A_aw, 4),
+            "top_scores_A": "; ".join(f"{s}:{p:.3f}" for s, p in scores_A[:3]),
+            "home_win_B": round(B_hw, 4), "draw_B": round(B_dr, 4), "away_win_B": round(B_aw, 4),
+            "top_scores_B": "; ".join(f"{s}:{p:.3f}" for s, p in scores_B[:3]),
+            "top_scores": "; ".join(f"{s}:{p:.3f}" for s, p in scores_A[:5]) # 兼容老版
         })
         
         md += f"### [{name}] {h_cn} vs {a_cn}\n"
-        if val_flag_h or val_flag_a: md += f"> 💡 **价值提示**: {val_flag_h} {val_flag_a}\n"
-        if rest_h < 4: md += f"> ⚠️ {h_cn} 休息不足(仅{rest_h}天)\n"
-        if rest_a < 4: md += f"> ⚠️ {a_cn} 休息不足(仅{rest_a}天)\n"
-        md += f"- **胜平负**: 主 {final_hw:.1%} | 平 {final_dr:.1%} | 客 {final_aw:.1%}\n"
-        md += f"- **主让一球(-1)**: 赢盘 {ah_win:.1%} | 走水 {ah_push:.1%} | 输盘 {ah_lose:.1%}\n"
-        md += f"- **大小/双方进球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
-        md += f"- **推荐比分**: {top3_str}\n\n"
+        md += f"🅰️ (50%): 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+        md += f"   └ 比分: `{scores_A[0][0]}`({scores_A[0][1]:.1%})\n"
+        md += f"🅱️ (80%): 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
+        md += f"   └ 比分: `{scores_B[0][0]}`({scores_B[0][1]:.1%})\n\n"
 
     if results:
-        today_str = datetime.now().strftime("%Y-%m-%d")
-        pd.DataFrame(results).to_csv(f"predictions_{today_str}.csv", index=False, encoding="utf-8-sig")
+        pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
 
     md += "---\n"
     md += get_performance_report(actual_results)
