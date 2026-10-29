@@ -221,7 +221,7 @@ def get_performance_report(actual_results):
                         ah_win = row.get("ah_home_win", 0)
                         ah_push = row.get("ah_push", 0)
                         ah_lose = row.get("ah_away_win", 0)
-                        ah_choice = max(ah_win, ah_push, ah_lose) # 模型最看好的选项
+                        ah_choice = max(ah_win, ah_push, ah_lose)
                         act_ah = "win" if actual_h - actual_a >= 2 else ("push" if actual_h - actual_a == 1 else "lose")
                         pred_ah = "win" if ah_choice == ah_win else ("push" if ah_choice == ah_push else "lose")
                         ah_ok = (act_ah == pred_ah)
@@ -245,21 +245,35 @@ def get_performance_report(actual_results):
                         if ou_ok: stats["ou_hits"] += 1
                         if btts_ok: stats["btts_hits"] += 1
                         
-                        details.append(f"| {date_str} | {h_cn} vs {a_cn} | {top_score_str} | {actual_h}-{actual_a} | {'✅' if win_loss_ok else '❌'} | {'✅' if ah_ok else '❌'} |")
+                        # 存储明细用于微信排版
+                        details.append({
+                            "date": date_str,
+                            "teams": f"{h_cn} vs {a_cn}",
+                            "pred": top_score_str,
+                            "act": f"{actual_h}-{actual_a}",
+                            "wl": win_loss_ok,
+                            "ah": ah_ok,
+                            "sc": score_ok
+                        })
         except Exception: pass
 
-    md = f"### 📊 历史战绩回顾\n"
+    md = f"### 📊 历史战绩回顾\n\n"
     if stats["total"] > 0:
         t = stats["total"]
         md += f"**已结算 {t} 场**\n"
-        md += f"- 🎯 胜平负命中率: **{stats['win_loss_hits']/t:.1%}**\n"
-        md += f"- ⚽ 精确比分命中率: **{stats['score_hits']/t:.1%}**\n"
-        md += f"- ⚖️ 让球盘(-1)命中率: **{stats['ah_hits']/t:.1%}**\n"
-        md += f"- 📈 大小球(2.5)命中率: **{stats['ou_hits']/t:.1%}**\n"
-        md += f"- 🥅 双方进球命中率: **{stats['btts_hits']/t:.1%}**\n\n"
-        md += "**近期明细:**\n| 日期 | 比赛 | 预测比分 | 实际比分 | 胜负 | 让球 |\n|---|---|---|---|---|---|\n"
-        md += "\n".join(details[-5:])
-        if len(details) > 5: md += f"\n\n*(仅显示最近 5 场)*\n"
+        md += f"- 🎯 胜平负: **{stats['win_loss_hits']/t:.1%}**\n"
+        md += f"- ⚽ 精确比分: **{stats['score_hits']/t:.1%}**\n"
+        md += f"- ⚖️ 让球盘: **{stats['ah_hits']/t:.1%}**\n"
+        md += f"- 📈 大小球: **{stats['ou_hits']/t:.1%}**\n"
+        md += f"- 🥅 双方进球: **{stats['btts_hits']/t:.1%}**\n\n"
+        
+        md += "**近期明细 (最近5场):**\n"
+        for d in details[-5:]:
+            icon = "🟢" if d["wl"] else "🔴"
+            md += f"{icon} **{d['teams']}** ({d['date'][5:]})\n"
+            md += f"实际 `{d['act']}` | 预测 `{d['pred']}`\n"
+            md += f"└ 胜负 {'✅' if d['wl'] else '❌'} | 让球 {'✅' if d['ah'] else '❌'} | 比分 {'✅' if d['sc'] else '❌'}\n\n"
+            
     else:
         md += "暂无已完赛记录（或比赛还没踢）。\n"
     return md
