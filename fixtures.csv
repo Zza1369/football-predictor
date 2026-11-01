@@ -1,12 +1,14 @@
 league,home,away
-E0,Chelsea,Man United
-E0,Bournemouth,Leeds
-E0,Aston Villa,Fulham
-E0,Man City,Brighton
-E0,Tottenham,Crystal Palace
+D1,Union Berlin,FC Koln
 E0,Liverpool,Arsenal
-D1,Bayern Munich,Dortmund
-D1,Leverkusen,Stuttgart
-SP1,Levante,Ath Madrid
-SP1,Barcelona,Alaves
-F1,Paris SG,Lyon
+I1,Juventus,Napoli
+E0,Newcastle,Everton
+SP1,Racing Santander,Real Madrid
+SP1,Ath Madrid,Bayern Munich
+SP1,Barcelona,Aston Villa
+E0,Man United,Roma
+SP1,Villarreal,Paris SG
+SP1,AEK Athens,Real Madrid
+E0,Liverpool,Fenerbahce
+D1,Dortmund,Betis
+D1,RB Leipzig,Man City
