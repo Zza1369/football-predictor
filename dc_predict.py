@@ -230,7 +230,7 @@ def get_performance_report(actual_results):
                         })
         except Exception: pass
 
-    md = f"### 📊 历史战绩对比 (A: 50%赔率 | B: 80%赔率)\n\n"
+    md = f"### 📊 历史战绩对比 (A: 50% | B: 80%)\n\n"
     if stats["total"] > 0:
         t = stats["total"]
         md += f"**已结算 {t} 场**\n"
@@ -239,9 +239,9 @@ def get_performance_report(actual_results):
         
         md += "**近期明细 (最近5场):**\n"
         for d in details[-5:]:
-            md += f"⚔️ **{d['teams']}** ({d['act']}) | "
-            md += f"🅰️ `{d['pred_a']}` {'✅' if d['a_wl'] else '❌'}{'✅' if d['a_sc'] else '❌'} | "
-            md += f"🅱️ `{d['pred_b']}` {'✅' if d['b_wl'] else '❌'}{'✅' if d['b_sc'] else '❌'}\n"
+            md += f"🔹 **{d['teams']}** ({d['act']})\n"
+            md += f"  └ 🅰️ 猜`{d['pred_a']}`: 胜{'✅' if d['a_wl'] else '❌'} 分{'✅' if d['a_sc'] else '❌'}\n"
+            md += f"  └ 🅱️ 猜`{d['pred_b']}`: 胜{'✅' if d['b_wl'] else '❌'} 分{'✅' if d['b_sc'] else '❌'}\n"
     else:
         md += "暂无已完赛记录。\n"
     return md
@@ -366,21 +366,21 @@ def main():
         ah_lose = 1 - ah_win - ah_push
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        # 极致紧凑排版开始
-        md += f"### [{name}] {h_cn} vs {a_cn} {confidence_tag}\n"
-        md += f"🎯 让球(-1): 赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
-        md += f"📈 大小/双方进: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
+        # 高清晰度排版
+        md += f"### {confidence_tag} [{name}] {h_cn} vs {a_cn}\n"
+        md += f"⚖️ **让球盘(-1)**: 赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
+        md += f"🥅 **大小球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
 
         if has_odds:
             top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
             top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
             md += f"🅰️ **50%**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
             md += f"🅱️ **80%**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-            md += f"⚽ 比分: 🅰️ {top3_A} | 🅱️ {top3_B}\n\n"
+            md += f"⚽ **比分**: 🅰️ {top3_A} | 🅱️ {top3_B}\n\n"
         else:
             top3_pure = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
             md += f"💡 **纯数据**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"⚽ 比分: {top3_pure}\n\n"
+            md += f"⚽ **比分**: {top3_pure}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
