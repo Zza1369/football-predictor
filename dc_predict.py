@@ -26,7 +26,6 @@ LEAGUE_NAMES = {
 MAX_GOALS = 8
 WEIGHT_A = 0.5 
 WEIGHT_B = 0.8 
-VALUE_THRESHOLD = 0.05
 
 EN_TO_CN = {
     "Man United": "曼联", "Man City": "曼城", "Liverpool": "利物浦", "Arsenal": "阿森纳", "Chelsea": "切尔西",
@@ -230,20 +229,20 @@ def get_performance_report(actual_results):
                         })
         except Exception: pass
 
-    md = f"### 📊 历史战绩对比 (A: 50% | B: 80%)\n\n"
+    md = f"### 📊 历史战绩对比 (A: 50% | B: 80%)<br><br>"
     if stats["total"] > 0:
         t = stats["total"]
-        md += f"**已结算 {t} 场**\n"
-        md += f"- 🎯 胜平负: 🅰️ **{stats['A_wl']/t:.1%}**  |  🅱️ **{stats['B_wl']/t:.1%}**\n"
-        md += f"- ⚽ 比分: 🅰️ **{stats['A_score']/t:.1%}**  |  🅱️ **{stats['B_score']/t:.1%}**\n\n"
+        md += f"**已结算 {t} 场**<br>"
+        md += f"- 🎯 胜平负: 🅰️ **{stats['A_wl']/t:.1%}**  |  🅱️ **{stats['B_wl']/t:.1%}**<br>"
+        md += f"- ⚽ 比分: 🅰️ **{stats['A_score']/t:.1%}**  |  🅱️ **{stats['B_score']/t:.1%}**<br><br>"
         
-        md += "**近期明细 (最近5场):**\n"
+        md += "**近期明细 (最近5场):**<br>"
         for d in details[-5:]:
-            md += f"🔹 **{d['teams']}** ({d['act']})\n"
-            md += f"  └ 🅰️ 猜`{d['pred_a']}`: 胜{'✅' if d['a_wl'] else '❌'} 分{'✅' if d['a_sc'] else '❌'}\n"
-            md += f"  └ 🅱️ 猜`{d['pred_b']}`: 胜{'✅' if d['b_wl'] else '❌'} 分{'✅' if d['b_sc'] else '❌'}\n"
+            md += f"• **{d['teams']}** ({d['act']})<br>"
+            md += f"  └ 🅰️ 猜`{d['pred_a']}`: 胜{'✅' if d['a_wl'] else '❌'} 分{'✅' if d['a_sc'] else '❌'}<br>"
+            md += f"  └ 🅱️ 猜`{d['pred_b']}`: 胜{'✅' if d['b_wl'] else '❌'} 分{'✅' if d['b_sc'] else '❌'}<br><br>"
     else:
-        md += "暂无已完赛记录。\n"
+        md += "暂无已完赛记录。<br>"
     return md
 
 def push_to_wechat(md_text):
@@ -270,7 +269,7 @@ def main():
                 actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
-    md = f"## ⚽ 今日预测 ({datetime.now().strftime('%m-%d')})\n\n"
+    md = f"## ⚽ 今日预测 ({datetime.now().strftime('%m-%d')})<br><br>"
 
     for _, r in fixtures.iterrows():
         code = str(r["league"]).strip()
@@ -366,26 +365,26 @@ def main():
         ah_lose = 1 - ah_win - ah_push
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        # 高清晰度排版
-        md += f"### {confidence_tag} [{name}] {h_cn} vs {a_cn}\n"
-        md += f"⚖️ **让球盘(-1)**: 赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
-        md += f"🥅 **大小球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
+        # 使用 <br> 强制换行
+        md += f"### {confidence_tag} [{name}] {h_cn} vs {a_cn}<br>"
+        md += f"⚖️ **让球盘(-1)**: 赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}<br>"
+        md += f"🥅 **大小球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}<br>"
 
         if has_odds:
             top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
             top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
-            md += f"🅰️ **50%**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"🅱️ **80%**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-            md += f"⚽ **比分**: 🅰️ {top3_A} | 🅱️ {top3_B}\n\n"
+            md += f"🅰️ **50%**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}<br>"
+            md += f"🅱️ **80%**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}<br>"
+            md += f"⚽ **比分**: 🅰️ {top3_A} | 🅱️ {top3_B}<br><br>"
         else:
             top3_pure = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
-            md += f"💡 **纯数据**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"⚽ **比分**: {top3_pure}\n\n"
+            md += f"💡 **纯数据**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}<br>"
+            md += f"⚽ **比分**: {top3_pure}<br><br>"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
 
-    md += "---\n"
+    md += "---<br>"
     md += get_performance_report(actual_results)
     
     with open("performance.md", "w", encoding="utf-8") as f:
