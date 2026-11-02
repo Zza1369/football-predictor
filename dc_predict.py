@@ -239,9 +239,9 @@ def get_performance_report(actual_results):
         
         md += "**近期明细 (最近5场):**\n"
         for d in details[-5:]:
-            md += f"⚔️ **{d['teams']}** ({d['date'][5:]}) | 实际 `{d['act']}`\n"
-            md += f"🅰️ 预测 `{d['pred_a']}` └ 胜负 {'✅' if d['a_wl'] else '❌'} | 比分 {'✅' if d['a_sc'] else '❌'}\n"
-            md += f"🅱️ 预测 `{d['pred_b']}` └ 胜负 {'✅' if d['b_wl'] else '❌'} | 比分 {'✅' if d['b_sc'] else '❌'}\n\n"
+            md += f"⚔️ **{d['teams']}** ({d['act']}) | "
+            md += f"🅰️ `{d['pred_a']}` {'✅' if d['a_wl'] else '❌'}{'✅' if d['a_sc'] else '❌'} | "
+            md += f"🅱️ `{d['pred_b']}` {'✅' if d['b_wl'] else '❌'}{'✅' if d['b_sc'] else '❌'}\n"
     else:
         md += "暂无已完赛记录。\n"
     return md
@@ -250,7 +250,7 @@ def push_to_wechat(md_text):
     key = os.environ.get("SERVERCHAN_KEY")
     if not key: return
     try:
-        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 双模型预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
+        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
     except Exception: pass
 
 def main():
@@ -270,8 +270,7 @@ def main():
                 actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
-    md = f"## ⚽ 今日双模型预测 ({datetime.now().strftime('%m-%d')})\n"
-    md += "*(🅰️: 50%赔率融合 | 🅱️: 80%赔率融合)*\n\n"
+    md = f"## ⚽ 今日预测 ({datetime.now().strftime('%m-%d')})\n\n"
 
     for _, r in fixtures.iterrows():
         code = str(r["league"]).strip()
@@ -315,7 +314,6 @@ def main():
                 tot = imp_h + imp_d + imp_a
                 mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-                # 模型 A
                 A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
                 A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
                 A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
@@ -325,7 +323,6 @@ def main():
                 g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
                 g_A /= g_A.sum()
                 
-                # 模型 B
                 B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
                 B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
                 B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
@@ -336,10 +333,22 @@ def main():
                 g_B /= g_B.sum()
 
         if not has_odds:
-            # 没有赔率，退化回纯模型
             A_hw, A_dr, A_aw = model_hw, model_dr, model_aw
             B_hw, B_dr, B_aw = model_hw, model_dr, model_aw
             g_A, g_B = g, g
+
+        probs = [A_hw, A_dr, A_aw]
+        max_p = max(probs)
+        margin = max_p - sorted(probs)[-2]
+        
+        over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
+        ou_max = max(over_25, 1 - over_25)
+        
+        confidence_tag = "⚖️ 正常"
+        if (max_p >= 0.55 and margin >= 0.15) or (ou_max >= 0.65):
+            confidence_tag = "🔥 高信心"
+        elif max_p < 0.45 and margin < 0.10:
+            confidence_tag = "⚠️ 易爆冷"
 
         scores_A = sorted([(f"{h}-{a}", float(g_A[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
         scores_B = sorted([(f"{h}-{a}", float(g_B[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
@@ -355,24 +364,23 @@ def main():
         ah_win = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a >= 2)
         ah_push = sum(g_A[h,a] for h in range(9) for a in range(9) if h-a == 1)
         ah_lose = 1 - ah_win - ah_push
-        over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        md += f"### [{name}] {h_cn} vs {a_cn}\n"
-        md += f"- **主让一球(-1)**: 赢盘 {ah_win:.1%} | 走水 {ah_push:.1%} | 输盘 {ah_lose:.1%}\n"
-        md += f"- **大小/双方进球**: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
+        # 极致紧凑排版开始
+        md += f"### [{name}] {h_cn} vs {a_cn} {confidence_tag}\n"
+        md += f"🎯 让球(-1): 赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
+        md += f"📈 大小/双方进: 大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
 
         if has_odds:
-            top3_A = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
-            top3_B = "、".join([f"`{s[0]}`" for s in scores_B[:3]])
-            md += f"🅰️ **50%赔率**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"   └ 推荐比分: {top3_A}\n"
-            md += f"🅱️ **80%赔率**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-            md += f"   └ 推荐比分: {top3_B}\n\n"
+            top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
+            top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
+            md += f"🅰️ **50%**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+            md += f"🅱️ **80%**: 主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
+            md += f"⚽ 比分: 🅰️ {top3_A} | 🅱️ {top3_B}\n\n"
         else:
-            top3_pure = "、".join([f"`{s[0]}`" for s in scores_A[:3]])
-            md += f"💡 **[纯数据]** (暂无实时赔率): 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"   └ 推荐比分: {top3_pure}\n\n"
+            top3_pure = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
+            md += f"💡 **纯数据**: 主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+            md += f"⚽ 比分: {top3_pure}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
