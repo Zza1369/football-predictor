@@ -101,7 +101,6 @@ def rho_correction(hg, ag, lh, la, rho):
     return 1.0
 
 class DixonColes:
-    # 【修改处1】：加大时间衰减，更看重近期比赛状态
     def __init__(self, xi=0.0035, use_xg=True):
         self.xi = xi
         self.use_xg = use_xg
@@ -116,7 +115,6 @@ class DixonColes:
         la = np.exp(aa[ai] - dh[hi])
         if self.use_xg: loss = poisson_deviance(df["xg_home"].values, lh) + poisson_deviance(df["xg_away"].values, la)
         else: loss = -(poisson.logpmf(df["hg"].values, lh) + poisson.logpmf(df["ag"].values, la))
-        # 【修改处2】：降低正则化惩罚（从 0.1 降到 0.01），释放强队大比分潜力，防止死磕 1-1
         reg = 0.01 * np.sum(p[:4*n]**2)
         return np.sum(w * loss) + reg
 
@@ -182,15 +180,15 @@ def get_performance_report(actual_results):
     details = []
     
     for f in pred_files:
-    date_str = f.replace("predictions_", "").replace(".csv", "")
-    
-    # 👇 新增：只统计 11月6日 及以后的战绩，之前的黑历史全部无视
-    if date_str < "2026-11-06":
-        continue
+        date_str = f.replace("predictions_", "").replace(".csv", "")
         
-    try:
-        pred_date = pd.to_datetime(date_str).normalize()
-        df = pd.read_csv(f, encoding="utf-8-sig")
+        # 【时间锁】：只统计 2026年11月6日及以后的比赛战绩
+        if date_str < "2026-11-06":
+            continue
+            
+        try:
+            pred_date = pd.to_datetime(date_str).normalize()
+            df = pd.read_csv(f, encoding="utf-8-sig")
             if "message" in df.columns: continue
             
             for _, row in df.iterrows():
