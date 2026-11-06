@@ -101,7 +101,8 @@ def rho_correction(hg, ag, lh, la, rho):
     return 1.0
 
 class DixonColes:
-    def __init__(self, xi=0.0019, use_xg=True):
+    # 【修改处1】：加大时间衰减，更看重近期比赛状态
+    def __init__(self, xi=0.0035, use_xg=True):
         self.xi = xi
         self.use_xg = use_xg
 
@@ -115,7 +116,8 @@ class DixonColes:
         la = np.exp(aa[ai] - dh[hi])
         if self.use_xg: loss = poisson_deviance(df["xg_home"].values, lh) + poisson_deviance(df["xg_away"].values, la)
         else: loss = -(poisson.logpmf(df["hg"].values, lh) + poisson.logpmf(df["ag"].values, la))
-        reg = 0.1 * np.sum(p[:4*n]**2)
+        # 【修改处2】：降低正则化惩罚（从 0.1 降到 0.01），释放强队大比分潜力，防止死磕 1-1
+        reg = 0.01 * np.sum(p[:4*n]**2)
         return np.sum(w * loss) + reg
 
     def fit(self, df):
@@ -249,7 +251,6 @@ def push_to_wechat(md_text):
     key = os.environ.get("SERVERCHAN_KEY")
     if not key: return
     try:
-        # 注意：title 里不要带乱七八糟的符号
         requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
     except Exception: pass
 
@@ -366,7 +367,6 @@ def main():
         ah_lose = 1 - ah_win - ah_push
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        # 彻底回归纯净的纯文本排版，使用 \n\n 换行
         md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
         md += f"⚖️ 让球(-1)：赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
         md += f"🥅 大小/双方进：大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
