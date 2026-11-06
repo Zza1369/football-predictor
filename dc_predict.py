@@ -182,10 +182,15 @@ def get_performance_report(actual_results):
     details = []
     
     for f in pred_files:
-        date_str = f.replace("predictions_", "").replace(".csv", "")
-        try:
-            pred_date = pd.to_datetime(date_str).normalize()
-            df = pd.read_csv(f, encoding="utf-8-sig")
+    date_str = f.replace("predictions_", "").replace(".csv", "")
+    
+    # 👇 新增：只统计 11月6日 及以后的战绩，之前的黑历史全部无视
+    if date_str < "2026-11-06":
+        continue
+        
+    try:
+        pred_date = pd.to_datetime(date_str).normalize()
+        df = pd.read_csv(f, encoding="utf-8-sig")
             if "message" in df.columns: continue
             
             for _, row in df.iterrows():
