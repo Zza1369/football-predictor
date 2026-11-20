@@ -2,7 +2,7 @@ name: Daily Predictions
 
 on:
   schedule:
-    - cron: '0 9 * * *'
+    - cron: '0 10 * * *'
   workflow_dispatch:
 
 jobs:
