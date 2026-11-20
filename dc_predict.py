@@ -178,31 +178,23 @@ def get_performance_report(actual_results):
     pred_files = sorted(glob.glob("predictions_*.csv"))
     stats = {"total": 0, "A_wl": 0, "B_wl": 0, "A_score": 0, "B_score": 0}
     details = []
-    
     for f in pred_files:
         date_str = f.replace("predictions_", "").replace(".csv", "")
-        
-        # 【时间锁】：只统计 2026年11月6日及以后的比赛战绩
-        if date_str < "2026-11-06":
-            continue
-            
+        if date_str < "2026-11-06": continue 
         try:
             pred_date = pd.to_datetime(date_str).normalize()
             df = pd.read_csv(f, encoding="utf-8-sig")
             if "message" in df.columns: continue
-            
             for _, row in df.iterrows():
                 h_cn, a_cn = str(row["home"]).strip(), str(row["away"]).strip()
                 h_en, a_en = translate_to_en(h_cn), translate_to_en(a_cn)
                 key = f"{h_en}||{a_en}"
-                
                 if key in actual_results:
                     matched_match = None
                     for match in actual_results[key]:
                         if match["date"] >= pred_date:
                             matched_match = match
                             break
-                    
                     if matched_match:
                         actual_h, actual_a = matched_match["hg"], matched_match["ag"]
                         act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
@@ -240,7 +232,6 @@ def get_performance_report(actual_results):
         md += f"已结算 {t} 场\n"
         md += f"🎯 胜平负: A {stats['A_wl']/t:.1%} | B {stats['B_wl']/t:.1%}\n"
         md += f"⚽ 比分: A {stats['A_score']/t:.1%} | B {stats['B_score']/t:.1%}\n\n"
-        
         md += "近期明细 (最近5场):\n"
         for d in details[-5:]:
             md += f"🔸 {d['teams']} (实际 {d['act']})\n"
@@ -255,7 +246,7 @@ def push_to_wechat(md_text):
     if not key: return
     try:
         requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
-    except Exception: pass
+    except Exception as e: print(f"微信异常: {e}")
 
 def main():
     try:
@@ -306,10 +297,23 @@ def main():
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
 
+        # 意甲/法甲平局补偿
+        if code in ["I1", "F1"]:
+            model_dr += 0.03
+            model_hw -= 0.015
+            model_aw -= 0.015
+            g = g * (1 + 0.03 / float(np.trace(g))) 
+            g /= g.sum()
+            model_hw = float(np.tril(g, -1).sum())
+            model_dr = float(np.trace(g))
+            model_aw = float(np.triu(g, 1).sum())
+
         match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
         if len(match_rows) == 0: match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
 
         has_odds = False
+        val_tag_h, val_tag_a = "", ""
+        
         if len(match_rows) > 0 and pd.notna(match_rows.iloc[-1]["odds_h"]):
             oh, od, oa = match_rows.iloc[-1]["odds_h"], match_rows.iloc[-1]["odds_d"], match_rows.iloc[-1]["odds_a"]
             if pd.notna(oh) and pd.notna(od) and pd.notna(oa):
@@ -317,6 +321,16 @@ def main():
                 imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
                 tot = imp_h + imp_d + imp_a
                 mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
+
+                # EV 和 半凯利公式
+                ev_h = (model_hw * oh) - 1
+                ev_a = (model_aw * oa) - 1
+                
+                kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
+                kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
+
+                if ev_h > 0.05: val_tag_h = f"🔥 主胜EV +{ev_h:.1%} (凯利仓位 {kelly_h:.1%})"
+                if ev_a > 0.05: val_tag_a = f"🔥 客胜EV +{ev_a:.1%} (凯利仓位 {kelly_a:.1%})"
 
                 A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
                 A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
@@ -371,6 +385,10 @@ def main():
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
         md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
+        
+        if has_odds and (val_tag_h or val_tag_a):
+            md += f"**{val_tag_h} {val_tag_a}**\n"
+            
         md += f"⚖️ 让球(-1)：赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
         md += f"🥅 大小/双方进：大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
 
