@@ -158,12 +158,22 @@ class DixonColes:
         r = minimize_scalar(nll, bounds=(-0.2, 0.2), method="bounded")
         self.rho = float(r.x)
 
-    def predict(self, home, away, rest_h=99, rest_a=99, max_goals=MAX_GOALS):
+    def predict(self, home, away, rest_h=99, rest_a=99, away_streak_h=False, away_streak_a=False, max_goals=MAX_GOALS):
         hi, ai = self._idx[home], self._idx[away]
         lh = np.exp(self.ah[hi] - self.da[ai] + self.home_adv)
         la = np.exp(self.aa[ai] - self.dh[hi])
-        if rest_h < 4: lh *= 0.9
-        if rest_a < 4: la *= 0.9
+        
+        # 阶梯休息惩罚
+        if rest_h == 3: lh *= 0.90
+        elif rest_h <= 2: lh *= 0.82
+        
+        if rest_a == 3: la *= 0.90
+        elif rest_a <= 2: la *= 0.82
+        
+        # 连续客场惩罚
+        if away_streak_h: lh *= 0.95 
+        if away_streak_a: la *= 0.95 
+
         g = np.zeros((max_goals + 1, max_goals + 1))
         for h in range(max_goals + 1):
             for a in range(max_goals + 1):
@@ -287,12 +297,24 @@ def main():
 
         df_league = cache[code]
         today = pd.Timestamp.now().normalize()
+        
+        # 获取休息天数
         def get_rest(team):
             m = df_league[((df_league["home"] == team) | (df_league["away"] == team)) & (df_league["date"] < today)]
             return 99 if len(m)==0 else (today - m["date"].max()).days
         rest_h, rest_a = get_rest(h_en), get_rest(a_en)
 
-        g, lh, la = model.predict(h_en, a_en, rest_h, rest_a)
+        # 获取连客状态
+        def get_away_streak(team):
+            m = df_league[((df_league["home"] == team) | (df_league["away"] == team)) & (df_league["date"] < today)]
+            if len(m)==0: return False
+            last_match = m.iloc[-1]
+            return last_match["away"] == team
+        
+        streak_h = get_away_streak(h_en)
+        streak_a = get_away_streak(a_en)
+
+        g, lh, la = model.predict(h_en, a_en, rest_h, rest_a, streak_h, streak_a)
         model_hw = float(np.tril(g, -1).sum())
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
