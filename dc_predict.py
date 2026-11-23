@@ -14,10 +14,21 @@ from scipy.stats import poisson
 warnings.filterwarnings("ignore")
 
 LOCAL_CSV = "fd_with_xg_2526.csv"
-FIXTURES_CSV = "fixtures.csv"
 SEASON_2627 = "2627"
 BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
-SPORTTERY_API = "https://webapi.sporttery.cn/gateway/jc/football/getMatchCalculatorV1.qry"
+
+# The Odds API 配置
+ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
+ODDS_API_URL = "https://api.the-odds-api.com/v4/sports/soccer/odds/"
+
+# 联赛英文名映射 (The Odds API 的 sport_key)
+API_LEAGUES = {
+    "soccer_epl": "E0", # 英超
+    "soccer_spain_la_liga": "SP1", # 西甲
+    "soccer_germany_bundesliga": "D1", # 德甲
+    "soccer_italy_serie_a": "I1", # 意甲
+    "soccer_france_ligue_one": "F1" # 法甲
+}
 
 LEAGUE_NAMES = {
     "E0": "英超", "SP1": "西甲", "D1": "德甲",
@@ -59,51 +70,23 @@ CN_TO_EN = {v: k for k, v in EN_TO_CN.items()}
 def translate_to_en(name): return CN_TO_EN.get(str(name).strip(), str(name).strip())
 def translate_to_cn(name): return EN_TO_CN.get(str(name).strip(), str(name).strip())
 
-def fetch_sporttery_odds():
-    """尝试从体彩官网获取今日赔率"""
-    print("正在尝试连接中国体彩官网获取实时赔率...")
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Referer": "https://m.sporttery.cn/"
-    }
-    try:
-        # 设置5秒极短超时，如果被墙立刻放弃
-        r = requests.get(SPORTTERY_API, headers=headers, timeout=5)
-        r.raise_for_status()
-        data = r.json()
-        
-        odds_dict = {}
-        # 解析体彩接口结构（如果海外IP没被拦，通常会走到这里）
-        for match in data.get("value", {}).get("matchInfoList", []):
-            h_cn = match.get("homeTeamAbbName")
-            a_cn = match.get("awayTeamAbbName")
-            had = match.get("had", {})
-            if had and had.get("h") and had.get("d") and had.get("a"):
-                h_odds = float(had.get("h"))
-                d_odds = float(had.get("d"))
-                a_odds = float(had.get("a"))
-                odds_dict[f"{h_cn}||{a_cn}"] = (h_odds, d_odds, a_odds)
-        
-        print(f"成功获取到 {len(odds_dict)} 场体彩实时赔率！")
-        return odds_dict
-    except Exception as e:
-        print(f"⚠️ 体彩接口连接失败(大概率被海外IP拦截)，将回退使用基础赔率。原因: {e}")
-        return {}
-
-# 启动时先抓一次体彩赔率（如果失败，字典为空）
-SPORTTERY_ODDS = fetch_sporttery_odds()
+# 模糊匹配球队名字（防止 API 名字与本地 CSV 差异）
+def fuzzy_match(name, team_list):
+    if name in team_list: return name
+    for t in team_list:
+        if name in t or t in name: return t
+    return name
 
 def _std(df):
     df = df.copy()
-    rename_dict = {"HxG": "xg_home", "AxG": "xg_away", "AvgH": "odds_h", "AvgD": "odds_d", "AvgA": "odds_a", "B365H": "b365_h", "B365D": "b365_d", "B365A": "b365_a"}
+    rename_dict = {"HxG": "xg_home", "AxG": "xg_away"}
     df = df.rename(columns=rename_dict)
-    if "odds_h" not in df.columns and "b365_h" in df.columns: df["odds_h"], df["odds_d"], df["odds_a"] = df["b365_h"], df["b365_d"], df["b365_a"]
     df["date"] = pd.to_datetime(df["date"], dayfirst=True, errors="coerce").dt.normalize()
-    df = df.dropna(subset=["date"])
-    for col in ["xg_home", "xg_away", "odds_h", "odds_d", "odds_a"]:
-        if col in df.columns: df[col] = pd.to_numeric(df[col], errors="coerce")
-        else: df[col] = np.nan
-    return df[["date", "home", "away", "hg", "ag", "xg_home", "xg_away", "odds_h", "odds_d", "odds_a"]]
+    df = df.dropna(subset=["date", "hg", "ag"])
+    df["hg"] = df["hg"].astype(int); df["ag"] = df["ag"].astype(int)
+    df["xg_home"] = pd.to_numeric(df.get("xg_home"), errors="coerce")
+    df["xg_away"] = pd.to_numeric(df.get("xg_away"), errors="coerce")
+    return df[["date", "home", "away", "hg", "ag", "xg_home", "xg_away"]]
 
 def load_league(code):
     frames = []
@@ -123,6 +106,58 @@ def load_league(code):
     if not frames: raise RuntimeError(f"{code} 无数据")
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date").reset_index(drop=True)
+
+def get_upcoming_matches_and_odds():
+    """从 The Odds API 获取未来比赛与赔率"""
+    if not ODDS_API_KEY:
+        print("⚠️ 未配置 ODDS_API_KEY，将跳过自动化比赛抓取。")
+        return []
+    
+    print("正在从 The Odds API 获取赛程与真实赔率...")
+    target_matches = []
+    
+    # 遍历五大联赛
+    for sport_key, our_code in API_LEAGUES.items():
+        params = {
+            "apiKey": ODDS_API_KEY,
+            "regions": "eu", # 欧洲盘口（包含 Pinnacle, Bet365等）
+            "markets": "h2h", # 胜平负
+            "oddsFormat": "decimal" # 小数赔率
+        }
+        try:
+            r = requests.get(f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/", params=params, timeout=15)
+            if r.status_code != 200:
+                continue
+                
+            matches = r.json()
+            for m in matches:
+                # 找 Pinnacle 或 Bet365 的赔率
+                best_h, best_d, best_a = None, None, None
+                for bookmaker in m.get("bookmakers", []):
+                    if bookmaker["key"] in ["pinnacle", "bet365"]:
+                        for market in bookmaker.get("markets", []):
+                            if market["key"] == "h2h":
+                                for outcome in market["outcomes"]:
+                                    if outcome["name"] == m["home_team"]: best_h = outcome["price"]
+                                    elif outcome["name"] == m["away_team"]: best_a = outcome["price"]
+                                    elif outcome["name"] == "Draw": best_d = outcome["price"]
+                                break
+                        if best_h: break # 找到了就跳出
+                
+                if best_h and best_d and best_a:
+                    target_matches.append({
+                        "league": our_code,
+                        "home_en": m["home_team"],
+                        "away_en": m["away_team"],
+                        "odds_h": best_h,
+                        "odds_d": best_d,
+                        "odds_a": best_a
+                    })
+        except Exception as e:
+            print(f"获取 {sport_key} 赔率失败: {e}")
+            
+    print(f"成功获取 {len(target_matches)} 场带赔率的比赛。")
+    return target_matches
 
 def poisson_deviance(y, mu):
     term = np.where(y > 0, y * np.log(y / mu), 0.0)
@@ -197,16 +232,12 @@ class DixonColes:
         hi, ai = self._idx[home], self._idx[away]
         lh = np.exp(self.ah[hi] - self.da[ai] + self.home_adv)
         la = np.exp(self.aa[ai] - self.dh[hi])
-        
         if rest_h == 3: lh *= 0.90
         elif rest_h <= 2: lh *= 0.82
-        
         if rest_a == 3: la *= 0.90
         elif rest_a <= 2: la *= 0.82
-        
         if away_streak_h: lh *= 0.95 
         if away_streak_a: la *= 0.95 
-
         g = np.zeros((max_goals + 1, max_goals + 1))
         for h in range(max_goals + 1):
             for a in range(max_goals + 1):
@@ -218,7 +249,7 @@ class DixonColes:
         return g, lh, la
 
 def get_performance_report(actual_results):
-    # 保留原版复盘，避免过长省略号
+    # 复盘逻辑保持不变
     pred_files = sorted(glob.glob("predictions_*.csv"))
     stats = {"total": 0, "A_wl": 0, "B_wl": 0, "A_score": 0, "B_score": 0}
     details = []
@@ -242,7 +273,6 @@ def get_performance_report(actual_results):
                     if matched_match:
                         actual_h, actual_a = matched_match["hg"], matched_match["ag"]
                         act_res = "H" if actual_h > actual_a else ("D" if actual_h == actual_a else "A")
-                        
                         top_a = str(row.get("top_scores_A", row.get("top_scores", ""))).split(";")[0].split(":")[0].strip()
                         pred_h_a, pred_a_a = map(int, top_a.split("-"))
                         pred_res_a = "H" if pred_h_a > pred_a_a else ("D" if pred_h_a == pred_a_a else "A")
@@ -263,10 +293,8 @@ def get_performance_report(actual_results):
                         
                         details.append({
                             "date": date_str, "teams": f"{h_cn} vs {a_cn}",
-                            "act": f"{actual_h}-{actual_a}",
-                            "pred_a": top_a, "pred_b": top_b,
-                            "a_wl": A_wl_ok, "b_wl": B_wl_ok,
-                            "a_sc": A_score_ok, "b_sc": B_score_ok
+                            "act": f"{actual_h}-{actual_a}", "pred_a": top_a, "pred_b": top_b,
+                            "a_wl": A_wl_ok, "b_wl": B_wl_ok, "a_sc": A_score_ok, "b_sc": B_score_ok
                         })
         except Exception: pass
 
@@ -289,13 +317,15 @@ def push_to_wechat(md_text):
     key = os.environ.get("SERVERCHAN_KEY")
     if not key: return
     try:
-        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 今日预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
+        requests.post(f"https://sctapi.ftqq.com/{key}.send", data={"title": f"⚽ 自动预测与战绩 {datetime.now().strftime('%m月%d日')}", "desp": md_text}, timeout=10)
     except Exception as e: print(f"微信异常: {e}")
 
 def main():
-    try:
-        fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
-    except: return
+    # 1. 抓取比赛与赔率
+    target_matches = get_upcoming_matches_and_odds()
+    if not target_matches:
+        print("今日无带赔率的比赛，退出运行。")
+        return
 
     results, cache, fitted = [], {}, {}
     actual_results = {}
@@ -309,19 +339,21 @@ def main():
                 actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
-    md = f"⚽ 今日预测 ({datetime.now().strftime('%m-%d')})\n\n"
+    md = f"⚽ 自动预测 (基于 API 实时赔率) {datetime.now().strftime('%m-%d')}\n\n"
 
-    for _, r in fixtures.iterrows():
-        code = str(r["league"]).strip()
-        if code not in LEAGUE_NAMES: continue
-        h_en, a_en = translate_to_en(r["home"]), translate_to_en(r["away"])
-        h_cn, a_cn = translate_to_cn(h_en), translate_to_cn(a_en)
-        name = LEAGUE_NAMES[code]
-
+    for match in target_matches:
+        code = match["league"]
+        h_en_raw, a_en_raw = match["home_en"], match["away_en"]
+        
+        # 匹配本地字典
         if code not in cache:
             try: cache[code] = load_league(code)
             except: cache[code] = None
         if cache[code] is None: continue
+
+        teams_list = sorted(set(cache[code]["home"]) | set(cache[code]["away"]))
+        h_en = fuzzy_match(h_en_raw, teams_list)
+        a_en = fuzzy_match(a_en_raw, teams_list)
 
         if code not in fitted:
             fitted[code] = DixonColes().fit(cache[code])
@@ -329,6 +361,9 @@ def main():
 
         if h_en not in model._idx or a_en not in model._idx: continue
 
+        h_cn, a_cn = translate_to_cn(h_en), translate_to_cn(a_en)
+        name = LEAGUE_NAMES[code]
+        
         df_league = cache[code]
         today = pd.Timestamp.now().normalize()
         def get_rest(team):
@@ -341,7 +376,6 @@ def main():
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
 
-        # 意甲/法甲平局补偿
         if code in ["I1", "F1"]:
             model_dr += 0.03
             model_hw -= 0.015
@@ -352,65 +386,43 @@ def main():
             model_dr = float(np.trace(g))
             model_aw = float(np.triu(g, 1).sum())
 
-        match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en) & (df_league["date"] >= today)]
-        if len(match_rows) == 0: match_rows = df_league[(df_league["home"] == h_en) & (df_league["away"] == a_en)]
+        oh, od, oa = match["odds_h"], match["odds_d"], match["odds_a"]
+        
+        imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
+        tot = imp_h + imp_d + imp_a
+        mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-        has_odds = False
+        ev_h = (model_hw * oh) - 1
+        ev_a = (model_aw * oa) - 1
+        
+        kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
+        kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
+
         val_tag_h, val_tag_a = "", ""
-        oh, od, oa = None, None, None
+        if ev_h > 0.05: val_tag_h = f"🔥 主胜EV +{ev_h:.1%} (凯利 {kelly_h:.1%})"
+        if ev_a > 0.05: val_tag_a = f"🔥 客胜EV +{ev_a:.1%} (凯利 {kelly_a:.1%})"
 
-        # 1. 优先尝试体彩赔率
-        sporttery_key = f"{h_cn}||{a_cn}"
-        if sporttery_key in SPORTTERY_ODDS:
-            oh, od, oa = SPORTTERY_ODDS[sporttery_key]
-            has_odds = True
-        # 2. 如果体彩没抓到，回退到外国数据源
-        elif len(match_rows) > 0 and pd.notna(match_rows.iloc[-1]["odds_h"]):
-            oh, od, oa = match_rows.iloc[-1]["odds_h"], match_rows.iloc[-1]["odds_d"], match_rows.iloc[-1]["odds_a"]
-            if pd.notna(oh) and pd.notna(od) and pd.notna(oa):
-                has_odds = True
-
-        if has_odds:
-            imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
-            tot = imp_h + imp_d + imp_a
-            mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
-
-            # EV 和 半凯利公式
-            ev_h = (model_hw * oh) - 1
-            ev_a = (model_aw * oa) - 1
-            
-            kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
-            kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
-
-            if ev_h > 0.05: val_tag_h = f"🔥 主胜EV +{ev_h:.1%} (凯利仓位 {kelly_h:.1%})"
-            if ev_a > 0.05: val_tag_a = f"🔥 客胜EV +{ev_a:.1%} (凯利仓位 {kelly_a:.1%})"
-
-            A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
-            A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
-            A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
-            g_A = g.copy()
-            g_A[np.tril_indices(9, -1)] *= A_hw/model_hw if model_hw > 0 else 1
-            g_A[np.diag_indices(9)] *= A_dr/model_dr if model_dr > 0 else 1
-            g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
-            g_A /= g_A.sum()
-            
-            B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
-            B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
-            B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
-            g_B = g.copy()
-            g_B[np.tril_indices(9, -1)] *= B_hw/model_hw if model_hw > 0 else 1
-            g_B[np.diag_indices(9)] *= B_dr/model_dr if model_dr > 0 else 1
-            g_B[np.triu_indices(9, 1)] *= B_aw/model_aw if model_aw > 0 else 1
-            g_B /= g_B.sum()
-        else:
-            A_hw, A_dr, A_aw = model_hw, model_dr, model_aw
-            B_hw, B_dr, B_aw = model_hw, model_dr, model_aw
-            g_A, g_B = g, g
+        A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
+        A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
+        A_aw = WEIGHT_A * mkt_aw + (1 - WEIGHT_A) * model_aw
+        g_A = g.copy()
+        g_A[np.tril_indices(9, -1)] *= A_hw/model_hw if model_hw > 0 else 1
+        g_A[np.diag_indices(9)] *= A_dr/model_dr if model_dr > 0 else 1
+        g_A[np.triu_indices(9, 1)] *= A_aw/model_aw if model_aw > 0 else 1
+        g_A /= g_A.sum()
+        
+        B_hw = WEIGHT_B * mkt_hw + (1 - WEIGHT_B) * model_hw
+        B_dr = WEIGHT_B * mkt_dr + (1 - WEIGHT_B) * model_dr
+        B_aw = WEIGHT_B * mkt_aw + (1 - WEIGHT_B) * model_aw
+        g_B = g.copy()
+        g_B[np.tril_indices(9, -1)] *= B_hw/model_hw if model_hw > 0 else 1
+        g_B[np.diag_indices(9)] *= B_dr/model_dr if model_dr > 0 else 1
+        g_B[np.triu_indices(9, 1)] *= B_aw/model_aw if model_aw > 0 else 1
+        g_B /= g_B.sum()
 
         probs = [A_hw, A_dr, A_aw]
         max_p = max(probs)
         margin = max_p - sorted(probs)[-2]
-        
         over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
         ou_max = max(over_25, 1 - over_25)
         
@@ -437,23 +449,16 @@ def main():
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
         md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
-        
-        if has_odds and (val_tag_h or val_tag_a):
+        if val_tag_h or val_tag_a:
             md += f"**{val_tag_h} {val_tag_a}**\n"
-            
         md += f"⚖️ 让球(-1)：赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
         md += f"🥅 大小/双方进：大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
-
-        if has_odds:
-            top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
-            top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
-            md += f"🅰️ 50%：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"🅱️ 80%：主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-            md += f"⚽ 比分：A {top3_A} | B {top3_B}\n\n"
-        else:
-            top3_pure = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
-            md += f"💡 纯数据：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"⚽ 比分：{top3_pure}\n\n"
+        
+        top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
+        top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
+        md += f"🅰️ 50%：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
+        md += f"🅱️ 80%：主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
+        md += f"⚽ 比分：A {top3_A} | B {top3_B}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
