@@ -20,21 +20,17 @@ BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
 
-# 👇 已经加上了欧冠(CL) 的 API 映射
 API_LEAGUES = {
     "soccer_epl": "E0",
     "soccer_spain_la_liga": "SP1",
     "soccer_germany_bundesliga": "D1",
     "soccer_italy_serie_a": "I1",
-    "soccer_france_ligue_one": "F1",
-    "soccer_uefa_champs_league": "CL"
+    "soccer_france_ligue_one": "F1"
 }
 
-# 👇 已经加上了欧冠(CL) 的联赛名字
 LEAGUE_NAMES = {
     "E0": "英超", "SP1": "西甲", "D1": "德甲",
-    "I1": "意甲", "F1": "法甲", "E1": "英冠",
-    "CL": "欧冠"
+    "I1": "意甲", "F1": "法甲", "E1": "英冠"
 }
 
 MAX_GOALS = 8
@@ -65,11 +61,7 @@ EN_TO_CN = {
     "Paris SG": "巴黎圣日耳曼", "Monaco": "摩纳哥", "Marseille": "马赛", "Lille": "里尔", "Lyon": "里昂",
     "Nice": "尼斯", "Lens": "朗斯", "Rennes": "雷恩", "Strasbourg": "斯特拉斯堡", "Brest": "布雷斯特",
     "Toulouse": "图卢兹", "Montpellier": "蒙彼利埃", "Nantes": "南特", "Reims": "兰斯",
-    "Auxerre": "欧塞尔", "Angers": "昂热", "Le Havre": "勒阿弗尔", "St Etienne": "圣埃蒂安", "Metz": "梅斯", "Lorient": "洛里昂", "Paris FC": "巴黎FC",
-    "Benfica": "本菲卡", "Porto": "波尔图", "Sporting CP": "葡萄牙体育", "Ajax": "阿贾克斯", 
-    "PSV Eindhoven": "埃因霍温", "Feyenoord": "费耶诺德", "Celtic": "凯尔特人", "Galatasaray": "加拉塔萨雷",
-    "Club Brugge": "布鲁日", "Red Star Belgrade": "贝尔格莱德红星", "Shakhtar Donetsk": "顿涅茨克矿工",
-    "Bayer Leverkusen": "勒沃库森", "Atletico Madrid": "马竞", "AC Milan": "AC米兰", "PSG": "巴黎圣日耳曼"
+    "Auxerre": "欧塞尔", "Angers": "昂热", "Le Havre": "勒阿弗尔", "St Etienne": "圣埃蒂安", "Metz": "梅斯", "Lorient": "洛里昂", "Paris FC": "巴黎FC"
 }
 CN_TO_EN = {v: k for k, v in EN_TO_CN.items()}
 
@@ -97,7 +89,7 @@ def load_league(code):
     frames = []
     try:
         local = pd.read_csv(LOCAL_CSV, encoding="utf-8-sig")
-        local = local[local["league"] == LEAGUE_NAMES.get(code, "")].copy()
+        local = local[local["league"] == LEAGUE_NAMES[code]].copy()
         if len(local): frames.append(_std(local))
     except: pass
     url = BASE_URL.format(season=SEASON_2627, league=code)
@@ -113,8 +105,10 @@ def load_league(code):
     return df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date").reset_index(drop=True)
 
 def get_api_odds_for_fixture(h_en, a_en, league_code):
+    """只去 API 里找这一场比赛的赔率"""
     if not ODDS_API_KEY: return None, None, None
     
+    # 找到对应的 sport_key
     sport_key = next((k for k, v in API_LEAGUES.items() if v == league_code), None)
     if not sport_key: return None, None, None
     
@@ -304,6 +298,7 @@ def push_to_wechat(md_text):
     except Exception as e: print(f"微信异常: {e}")
 
 def main():
+    # 读取你的 fixtures.csv
     try:
         fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
     except: return
@@ -367,6 +362,7 @@ def main():
             model_dr = float(np.trace(g))
             model_aw = float(np.triu(g, 1).sum())
 
+        # 去 API 找这场比赛的赔率
         oh, od, oa = get_api_odds_for_fixture(h_en, a_en, code)
         has_odds = oh is not None and od is not None and oa is not None
         val_tag_h, val_tag_a = "", ""
