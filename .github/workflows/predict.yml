@@ -24,6 +24,7 @@ jobs:
         env:
           TZ: Asia/Shanghai
           SERVERCHAN_KEY: ${{ secrets.SERVERCHAN_KEY }}   # <--- 就是这行！把钥匙传进去
+          ODDS_API_KEY: ${{ secrets.ODDS_API_KEY }}
         run: python dc_predict.py
         
       - name: 运行复盘评估
