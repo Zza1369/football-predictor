@@ -21,16 +21,12 @@ BASE_URL = "https://www.football-data.co.uk/mmz4281/{season}/{league}.csv"
 ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
 
 API_LEAGUES = {
-    "soccer_epl": "E0",
-    "soccer_spain_la_liga": "SP1",
-    "soccer_germany_bundesliga": "D1",
-    "soccer_italy_serie_a": "I1",
-    "soccer_france_ligue_one": "F1"
+    "soccer_epl": "E0", "soccer_spain_la_liga": "SP1", "soccer_germany_bundesliga": "D1",
+    "soccer_italy_serie_a": "I1", "soccer_france_ligue_one": "F1", "soccer_uefa_champs_league": "CL"
 }
 
 LEAGUE_NAMES = {
-    "E0": "英超", "SP1": "西甲", "D1": "德甲",
-    "I1": "意甲", "F1": "法甲", "E1": "英冠"
+    "E0": "英超", "SP1": "西甲", "D1": "德甲", "I1": "意甲", "F1": "法甲", "E1": "英冠", "CL": "欧冠"
 }
 
 MAX_GOALS = 8
@@ -42,26 +38,28 @@ EN_TO_CN = {
     "Tottenham": "热刺", "Newcastle": "纽卡", "Aston Villa": "阿斯顿维拉", "Brighton": "布莱顿",
     "West Ham": "西汉姆联", "Crystal Palace": "水晶宫", "Wolves": "狼队", "Bournemouth": "伯恩茅斯",
     "Fulham": "富勒姆", "Everton": "埃弗顿", "Brentford": "布伦特福德", "Nott'm Forest": "诺丁汉森林",
-    "Leicester": "莱斯特城", "Ipswich": "伊普斯维奇", "Southampton": "南安普顿",
-    "Leeds": "利兹联", "Sunderland": "桑德兰", "Burnley": "伯恩利", "Sheffield United": "谢菲联",
-    "Real Madrid": "皇马", "Barcelona": "巴萨", "Ath Madrid": "马竞", "Ath Bilbao": "毕尔巴鄂竞技",
-    "Sociedad": "皇家社会", "Betis": "皇家贝蒂斯", "Villarreal": "比利亚雷亚尔", "Valencia": "瓦伦西亚",
-    "Girona": "赫罗纳", "Celta": "塞尔塔", "Vallecano": "巴列卡诺", "Osasuna": "奥萨苏纳",
-    "Mallorca": "马洛卡", "Getafe": "赫塔菲", "Alaves": "阿拉维斯", "Las Palmas": "拉斯帕尔马斯",
-    "Leganes": "莱加内斯", "Valladolid": "巴拉多利德", "Espanol": "西班牙人", "Sevilla": "塞维利亚", "Oviedo": "奥维耶多",
-    "Levante": "莱万特", "Bayern Munich": "拜仁", "Leverkusen": "勒沃库森", "Dortmund": "多特蒙德", 
-    "RB Leipzig": "莱比锡红牛", "Eintracht Frankfurt": "法兰克福", "Stuttgart": "斯图加特", "Freiburg": "弗莱堡", 
-    "Wolfsburg": "沃尔夫斯堡", "Mainz": "美因茨", "Hoffenheim": "霍芬海姆", "Augsburg": "奥格斯堡", 
-    "Werder Bremen": "不莱梅", "Union Berlin": "柏林联合", "M'gladbach": "门兴", "St Pauli": "圣保利", 
-    "Heidenheim": "海登海姆", "Holstein Kiel": "荷尔斯泰因基尔", "Bochum": "波鸿", "Hamburg": "汉堡", 
-    "FC Koln": "科隆", "Inter": "国米", "Milan": "AC米兰", "Juventus": "尤文图斯", "Napoli": "那不勒斯", 
-    "Roma": "罗马", "Lazio": "拉齐奥", "Atalanta": "亚特兰大", "Fiorentina": "佛罗伦萨", "Bologna": "博洛尼亚",
-    "Torino": "都灵", "Udinese": "乌迪内斯", "Genoa": "热那亚", "Cagliari": "卡利亚里", "Lecce": "莱切",
-    "Verona": "维罗纳", "Empoli": "恩波利", "Parma": "帕尔马", "Como": "科莫", "Venezia": "威尼斯", "Monza": "蒙扎",
-    "Paris SG": "巴黎圣日耳曼", "Monaco": "摩纳哥", "Marseille": "马赛", "Lille": "里尔", "Lyon": "里昂",
-    "Nice": "尼斯", "Lens": "朗斯", "Rennes": "雷恩", "Strasbourg": "斯特拉斯堡", "Brest": "布雷斯特",
-    "Toulouse": "图卢兹", "Montpellier": "蒙彼利埃", "Nantes": "南特", "Reims": "兰斯",
-    "Auxerre": "欧塞尔", "Angers": "昂热", "Le Havre": "勒阿弗尔", "St Etienne": "圣埃蒂安", "Metz": "梅斯", "Lorient": "洛里昂", "Paris FC": "巴黎FC"
+    "Leicester": "莱斯特城", "Ipswich": "伊普斯维奇", "Southampton": "南安普顿", "Leeds": "利兹联", 
+    "Sunderland": "桑德兰", "Burnley": "伯恩利", "Sheffield United": "谢菲联", "Real Madrid": "皇马", 
+    "Barcelona": "巴萨", "Ath Madrid": "马竞", "Ath Bilbao": "毕尔巴鄂竞技", "Sociedad": "皇家社会", 
+    "Betis": "皇家贝蒂斯", "Villarreal": "比利亚雷亚尔", "Valencia": "瓦伦西亚", "Girona": "赫罗纳", 
+    "Celta": "塞尔塔", "Vallecano": "巴列卡诺", "Osasuna": "奥萨苏纳", "Mallorca": "马洛卡", "Getafe": "赫塔菲", 
+    "Alaves": "阿拉维斯", "Las Palmas": "拉斯帕尔马斯", "Leganes": "莱加内斯", "Valladolid": "巴拉多利德", 
+    "Espanol": "西班牙人", "Sevilla": "塞维利亚", "Oviedo": "奥维耶多", "Levante": "莱万特", "Bayern Munich": "拜仁", 
+    "Leverkusen": "勒沃库森", "Dortmund": "多特蒙德", "RB Leipzig": "莱比锡红牛", "Eintracht Frankfurt": "法兰克福", 
+    "Stuttgart": "斯图加特", "Freiburg": "弗莱堡", "Wolfsburg": "沃尔夫斯堡", "Mainz": "美因茨", "Hoffenheim": "霍芬海姆", 
+    "Augsburg": "奥格斯堡", "Werder Bremen": "不莱梅", "Union Berlin": "柏林联合", "M'gladbach": "门兴", "St Pauli": "圣保利", 
+    "Heidenheim": "海登海姆", "Holstein Kiel": "荷尔斯泰因基尔", "Bochum": "波鸿", "Hamburg": "汉堡", "FC Koln": "科隆", 
+    "Inter": "国米", "Milan": "AC米兰", "Juventus": "尤文图斯", "Napoli": "那不勒斯", "Roma": "罗马", "Lazio": "拉齐奥", 
+    "Atalanta": "亚特兰大", "Fiorentina": "佛罗伦萨", "Bologna": "博洛尼亚", "Torino": "都灵", "Udinese": "乌迪内斯", 
+    "Genoa": "热那亚", "Cagliari": "卡利亚里", "Lecce": "莱切", "Verona": "维罗纳", "Empoli": "恩波利", "Parma": "帕尔马", 
+    "Como": "科莫", "Venezia": "威尼斯", "Monza": "蒙扎", "Paris SG": "巴黎圣日耳曼", "Monaco": "摩纳哥", "Marseille": "马赛", 
+    "Lille": "里尔", "Lyon": "里昂", "Nice": "尼斯", "Lens": "朗斯", "Rennes": "雷恩", "Strasbourg": "斯特拉斯堡", 
+    "Brest": "布雷斯特", "Toulouse": "图卢兹", "Montpellier": "蒙彼利埃", "Nantes": "南特", "Reims": "兰斯", 
+    "Auxerre": "欧塞尔", "Angers": "昂热", "Le Havre": "勒阿弗尔", "St Etienne": "圣埃蒂安", "Metz": "梅斯", "Lorient": "洛里昂", 
+    "Paris FC": "巴黎FC", "Benfica": "本菲卡", "Porto": "波尔图", "Sporting CP": "葡萄牙体育", "Ajax": "阿贾克斯", 
+    "PSV Eindhoven": "埃因霍温", "Feyenoord": "费耶诺德", "Celtic": "凯尔特人", "Galatasaray": "加拉塔萨雷",
+    "Club Brugge": "布鲁日", "Red Star Belgrade": "贝尔格莱德红星", "Shakhtar Donetsk": "顿涅茨克矿工",
+    "Bayer Leverkusen": "勒沃库森", "Atletico Madrid": "马竞", "AC Milan": "AC米兰", "PSG": "巴黎圣日耳曼"
 }
 CN_TO_EN = {v: k for k, v in EN_TO_CN.items()}
 
@@ -89,7 +87,7 @@ def load_league(code):
     frames = []
     try:
         local = pd.read_csv(LOCAL_CSV, encoding="utf-8-sig")
-        local = local[local["league"] == LEAGUE_NAMES[code]].copy()
+        local = local[local["league"] == LEAGUE_NAMES.get(code, "")].copy()
         if len(local): frames.append(_std(local))
     except: pass
     url = BASE_URL.format(season=SEASON_2627, league=code)
@@ -100,42 +98,45 @@ def load_league(code):
         raw = raw.rename(columns={"Date": "date", "HomeTeam": "home", "AwayTeam": "away", "FTHG": "hg", "FTAG": "ag"})
         frames.append(_std(raw))
     except: pass
-    if not frames: return None
+    if not frames: return None # 彻底改为返回 None，防止空表崩溃
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date").reset_index(drop=True)
 
 def get_api_odds_for_fixture(h_en, a_en, league_code):
-    """只去 API 里找这一场比赛的赔率"""
-    if not ODDS_API_KEY: return None, None, None
+    """获取赔率（包含胜负、让球、大小球）"""
+    if not ODDS_API_KEY: return None
     
-    # 找到对应的 sport_key
     sport_key = next((k for k, v in API_LEAGUES.items() if v == league_code), None)
-    if not sport_key: return None, None, None
+    if not sport_key: return None
     
-    params = {"apiKey": ODDS_API_KEY, "regions": "eu", "markets": "h2h", "oddsFormat": "decimal"}
+    params = {"apiKey": ODDS_API_KEY, "regions": "eu", "markets": "h2h,spreads,totals", "oddsFormat": "decimal"}
     try:
         r = requests.get(f"https://api.the-odds-api.com/v4/sports/{sport_key}/odds/", params=params, timeout=10)
-        if r.status_code != 200: return None, None, None
+        if r.status_code != 200: return None
         
         matches = r.json()
         for m in matches:
-            # 模糊匹配队名
             if (h_en.lower() in m["home_team"].lower() or m["home_team"].lower() in h_en.lower()) and \
                (a_en.lower() in m["away_team"].lower() or m["away_team"].lower() in a_en.lower()):
                 
-                best_h, best_d, best_a = None, None, None
+                res = {"h2h": {}, "spreads": {}, "totals": {}}
                 for bookmaker in m.get("bookmakers", []):
                     if bookmaker["key"] in ["pinnacle", "bet365"]:
                         for market in bookmaker.get("markets", []):
                             if market["key"] == "h2h":
-                                for outcome in market["outcomes"]:
-                                    if outcome["name"] == m["home_team"]: best_h = outcome["price"]
-                                    elif outcome["name"] == m["away_team"]: best_a = outcome["price"]
-                                    elif outcome["name"] == "Draw": best_d = outcome["price"]
-                                break
-                        if best_h: return best_h, best_d, best_a
+                                for out in market["outcomes"]:
+                                    if out["name"] == m["home_team"]: res["h2h"]["h"] = out["price"]
+                                    elif out["name"] == m["away_team"]: res["h2h"]["a"] = out["price"]
+                                    elif out["name"] == "Draw": res["h2h"]["d"] = out["price"]
+                            elif market["key"] == "spreads":
+                                for out in market["outcomes"]:
+                                    if out["name"] == m["home_team"]: res["spreads"]["h"] = out["point"]
+                                    elif out["name"] == m["away_team"]: res["spreads"]["a"] = out["point"]
+                            elif market["key"] == "totals":
+                                res["totals"]["line"] = market["outcomes"][0].get("point")
+                        if res["h2h"]: return res
     except: pass
-    return None, None, None
+    return None
 
 def poisson_deviance(y, mu):
     term = np.where(y > 0, y * np.log(y / mu), 0.0)
@@ -298,7 +299,6 @@ def push_to_wechat(md_text):
     except Exception as e: print(f"微信异常: {e}")
 
 def main():
-    # 读取你的 fixtures.csv
     try:
         fixtures = pd.read_csv(FIXTURES_CSV, encoding="utf-8-sig").dropna(subset=["league", "home", "away"])
     except: return
@@ -309,10 +309,11 @@ def main():
     for code in LEAGUE_NAMES.keys():
         try:
             df = load_league(code)
-            for _, r in df.dropna(subset=["hg", "ag"]).iterrows():
-                key = f"{r['home']}||{r['away']}"
-                if key not in actual_results: actual_results[key] = []
-                actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
+            if df is not None:
+                for _, r in df.dropna(subset=["hg", "ag"]).iterrows():
+                    key = f"{r['home']}||{r['away']}"
+                    if key not in actual_results: actual_results[key] = []
+                    actual_results[key].append({"date": r['date'], "hg": int(r['hg']), "ag": int(r['ag'])})
         except: pass
 
     md = f"⚽ 今日预测 ({datetime.now().strftime('%m-%d')})\n\n"
@@ -326,19 +327,38 @@ def main():
         if code not in cache:
             try: cache[code] = load_league(code)
             except: cache[code] = None
-        if cache[code] is None: continue
 
-        teams_list = sorted(set(cache[code]["home"]) | set(cache[code]["away"]))
-        h_en = fuzzy_match(h_en_raw, teams_list)
-        a_en = fuzzy_match(a_en_raw, teams_list)
-        
+        teams_list = []
+        if cache[code] is not None:
+            teams_list = sorted(set(cache[code]["home"]) | set(cache[code]["away"]))
+            
+        h_en = fuzzy_match(h_en_raw, teams_list) if teams_list else h_en_raw
+        a_en = fuzzy_match(a_en_raw, teams_list) if teams_list else a_en_raw
         h_cn, a_cn = translate_to_cn(h_en), translate_to_cn(a_en)
+
+        # ================= 核心：API 纯赔率兜底逻辑 =================
+        if cache[code] is None or h_en not in cache[code]["home"].values and h_en not in cache[code]["away"].values:
+            api_data = get_api_odds_for_fixture(h_en, a_en, code)
+            if api_data and "h" in api_data["h2h"]:
+                oh, od, oa = api_data["h2h"]["h"], api_data["h2h"]["d"], api_data["h2h"]["a"]
+                imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
+                tot = imp_h + imp_d + imp_a
+                mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
+                
+                md += f"⚖️ 正常 【{name}】{h_cn} vs {a_cn}\n"
+                md += f"🛡️ **[纯赔率推算]** (本地无历史数据)\n"
+                md += f"📊 市场概率：主 {mkt_hw:.1%} | 平 {mkt_dr:.1%} | 客 {mkt_aw:.1%}\n"
+                if "line" in api_data["totals"]: md += f"🥅 大小球盘口：{api_data['totals']['line']}\n"
+                if "h" in api_data["spreads"]: md += f"⚖️ 让球盘口：主 {api_data['spreads']['h']} | 客 {api_data['spreads']['a']}\n"
+                md += f"💡 说明：缺乏模型支撑，仅供赔率参考。\n\n"
+            else:
+                md += f"⚠️ 【{name}】{h_cn} vs {a_cn}：无历史数据且无赔率，跳过。\n\n"
+            continue
+        # ============================================================
 
         if code not in fitted:
             fitted[code] = DixonColes().fit(cache[code])
         model = fitted[code]
-
-        if h_en not in model._idx or a_en not in model._idx: continue
 
         df_league = cache[code]
         today = pd.Timestamp.now().normalize()
@@ -353,27 +373,22 @@ def main():
         model_aw = float(np.triu(g, 1).sum())
 
         if code in ["I1", "F1"]:
-            model_dr += 0.03
-            model_hw -= 0.015
-            model_aw -= 0.015
+            model_dr += 0.03; model_hw -= 0.015; model_aw -= 0.015
             g = g * (1 + 0.03 / float(np.trace(g))) 
             g /= g.sum()
-            model_hw = float(np.tril(g, -1).sum())
-            model_dr = float(np.trace(g))
-            model_aw = float(np.triu(g, 1).sum())
+            model_hw = float(np.tril(g, -1).sum()); model_dr = float(np.trace(g)); model_aw = float(np.triu(g, 1).sum())
 
-        # 去 API 找这场比赛的赔率
-        oh, od, oa = get_api_odds_for_fixture(h_en, a_en, code)
-        has_odds = oh is not None and od is not None and oa is not None
+        api_data = get_api_odds_for_fixture(h_en, a_en, code)
+        has_odds = api_data is not None and "h" in api_data["h2h"]
         val_tag_h, val_tag_a = "", ""
 
         if has_odds:
+            oh, od, oa = api_data["h2h"]["h"], api_data["h2h"]["d"], api_data["h2h"]["a"]
             imp_h, imp_d, imp_a = 1/oh, 1/od, 1/oa
             tot = imp_h + imp_d + imp_a
             mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-            ev_h = (model_hw * oh) - 1
-            ev_a = (model_aw * oa) - 1
+            ev_h = (model_hw * oh) - 1; ev_a = (model_aw * oa) - 1
             kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
             kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
 
@@ -403,16 +418,13 @@ def main():
             g_A, g_B = g, g
 
         probs = [A_hw, A_dr, A_aw]
-        max_p = max(probs)
-        margin = max_p - sorted(probs)[-2]
+        max_p = max(probs); margin = max_p - sorted(probs)[-2]
         over_25 = sum(g_A[h,a] for h in range(9) for a in range(9) if h+a >= 3)
         ou_max = max(over_25, 1 - over_25)
         
         confidence_tag = "⚖️ 正常"
-        if (max_p >= 0.55 and margin >= 0.15) or (ou_max >= 0.65):
-            confidence_tag = "🔥 高信心"
-        elif max_p < 0.45 and margin < 0.10:
-            confidence_tag = "⚠️ 易爆冷"
+        if (max_p >= 0.55 and margin >= 0.15) or (ou_max >= 0.65): confidence_tag = "🔥 高信心"
+        elif max_p < 0.45 and margin < 0.10: confidence_tag = "⚠️ 易爆冷"
 
         scores_A = sorted([(f"{h}-{a}", float(g_A[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
         scores_B = sorted([(f"{h}-{a}", float(g_B[h, a])) for h in range(g.shape[0]) for a in range(g.shape[1])], key=lambda x: x[1], reverse=True)
@@ -431,8 +443,7 @@ def main():
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
         md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
-        if has_odds and (val_tag_h or val_tag_a):
-            md += f"**{val_tag_h} {val_tag_a}**\n"
+        if has_odds and (val_tag_h or val_tag_a): md += f"**{val_tag_h} {val_tag_a}**\n"
             
         md += f"⚖️ 让球(-1)：赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
         md += f"🥅 大小/双方进：大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
@@ -453,10 +464,7 @@ def main():
 
     md += "-------------------\n"
     md += get_performance_report(actual_results)
-    
-    with open("performance.md", "w", encoding="utf-8") as f:
-        f.write(md)
-        
+    with open("performance.md", "w", encoding="utf-8") as f: f.write(md)
     push_to_wechat(md)
 
 if __name__ == "__main__":
