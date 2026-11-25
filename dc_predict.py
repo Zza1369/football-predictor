@@ -100,7 +100,7 @@ def load_league(code):
         raw = raw.rename(columns={"Date": "date", "HomeTeam": "home", "AwayTeam": "away", "FTHG": "hg", "FTAG": "ag"})
         frames.append(_std(raw))
     except: pass
-    if not frames: raise RuntimeError(f"{code} 无数据")
+    if not frames: return None
     df = pd.concat(frames, ignore_index=True)
     return df.drop_duplicates(subset=["date", "home", "away"], keep="last").sort_values("date").reset_index(drop=True)
 
