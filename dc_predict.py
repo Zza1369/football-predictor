@@ -22,11 +22,11 @@ ODDS_API_KEY = os.environ.get("ODDS_API_KEY")
 
 API_LEAGUES = {
     "soccer_epl": "E0", "soccer_spain_la_liga": "SP1", "soccer_germany_bundesliga": "D1",
-    "soccer_italy_serie_a": "I1", "soccer_france_ligue_one": "F1", "soccer_uefa_champs_league": "CL"
+    "soccer_italy_serie_a": "I1", "soccer_france_ligue_one": "F1", "soccer_uefa_champs_league": "CL","soccer_uefa_europa_league": "EL"
 }
 
 LEAGUE_NAMES = {
-    "E0": "英超", "SP1": "西甲", "D1": "德甲", "I1": "意甲", "F1": "法甲", "E1": "英冠", "CL": "欧冠"
+    "E0": "英超", "SP1": "西甲", "D1": "德甲", "I1": "意甲", "F1": "法甲", "E1": "英冠", "CL": "欧冠","EL": "欧罗巴"
 }
 
 MAX_GOALS = 8
