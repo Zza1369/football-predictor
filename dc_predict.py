@@ -367,7 +367,40 @@ def main():
             return 99 if len(m)==0 else (today - m["date"].max()).days
         rest_h, rest_a = get_rest(h_en), get_rest(a_en)
 
+                # 1. 先获取模型的基础预测
         g, lh, la = model.predict(h_en, a_en, rest_h, rest_a)
+        
+        # 2. 获取真实盘口
+        api_data = get_api_odds_for_fixture(h_en, a_en, code)
+        has_odds = api_data is not None and "h" in api_data["h2h"]
+        
+        if has_odds:
+            oh, od, oa = api_data["h2h"]["h"], api_data["h2h"]["d"], api_data["h2h"]["a"]
+            
+            # 👇 核心：如果抓到了大小球和让球盘口，直接反推市场 \lambda
+            mkt_total_line = api_data.get("totals", {}).get("line")
+            mkt_spread_home = api_data.get("spreads", {}).get("h")
+            
+            if mkt_total_line and mkt_spread_home is not None:
+                # 让球盘口通常是负数（主队让球），大小球是正数
+                # 反推公式：主队 = (总进球 - 让球数) / 2，客队 = (总进球 + 让球数) / 2
+                lh_mkt = (mkt_total_line - mkt_spread_home) / 2.0
+                la_mkt = (mkt_total_line + mkt_spread_home) / 2.0
+                
+                # 用市场预期的 \lambda 重新生成泊松矩阵，这样算出来的比分才是庄家眼里的比分！
+                g_mkt = np.zeros((MAX_GOALS + 1, MAX_GOALS + 1))
+                for h in range(MAX_GOALS + 1):
+                    for a in range(MAX_GOALS + 1):
+                        p = poisson.pmf(h, lh_mkt) * poisson.pmf(a, la_mkt)
+                        p *= rho_correction(h, a, lh_mkt, la_mkt, model.rho)
+                        g_mkt[h, a] = p
+                g_mkt = np.clip(g_mkt, 0, None)
+                g_mkt /= g_mkt.sum()
+                
+                # 让后续计算都用这个更准的矩阵
+                g = g_mkt 
+                
+        # 3. 重新计算胜平负概率和比分（基于修正后的矩阵）
         model_hw = float(np.tril(g, -1).sum())
         model_dr = float(np.trace(g))
         model_aw = float(np.triu(g, 1).sum())
