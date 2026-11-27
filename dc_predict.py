@@ -475,22 +475,26 @@ def main():
         ah_lose = 1 - ah_win - ah_push
         btts_yes = sum(g_A[h,a] for h in range(9) for a in range(9) if h>0 and a>0)
 
-        md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
-        if has_odds and (val_tag_h or val_tag_a): md += f"**{val_tag_h} {val_tag_a}**\n"
+               # 推荐比分只取 A 的（因为 B 差异极小，省屏幕空间）
+        top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
+        
+        # 核心优化：如果有EV，直接置顶放大，抓眼球
+        if has_odds:
+            if val_tag_h or val_tag_a:
+                md += f"🔥🔥 **{val_tag_h} {val_tag_a}** 🔥🔥\n"
+            md += f"【{name}】{h_cn} vs {a_cn}\n"
+            md += f"📊 概率：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%} | 推荐比分: {top3_A}\n"
+        else:
+            md += f"{confidence_tag} 【{name}】{h_cn} vs {a_cn}\n"
+            md += f"📊 纯数据：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%} | 推荐比分: {top3_A}\n"
             
         md += f"⚖️ 让球(-1)：赢 {ah_win:.1%} | 走 {ah_push:.1%} | 输 {ah_lose:.1%}\n"
-        md += f"🥅 大小/双方进：大 {over_25:.1%} | 双方进 {btts_yes:.1%}\n"
-
-        if has_odds:
-            top3_A = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
-            top3_B = " ".join([f"`{s[0]}`" for s in scores_B[:3]])
-            md += f"🅰️ 50%：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"🅱️ 80%：主 {B_hw:.1%} | 平 {B_dr:.1%} | 客 {B_aw:.1%}\n"
-            md += f"⚽ 比分：A {top3_A} | B {top3_B}\n\n"
+        
+        # 大小球直接给结论
+        if over_25 > 0.5:
+            md += f"🥅 大小/双方进：**大 {over_25:.1%} (主推大)** | 双方进 {btts_yes:.1%}\n\n"
         else:
-            top3_pure = " ".join([f"`{s[0]}`" for s in scores_A[:3]])
-            md += f"💡 纯数据：主 {A_hw:.1%} | 平 {A_dr:.1%} | 客 {A_aw:.1%}\n"
-            md += f"⚽ 比分：{top3_pure}\n\n"
+            md += f"🥅 大小/双方进：**小 {1-over_25:.1%} (主推小)** | 双方进 {btts_yes:.1%}\n\n"
 
     if results:
         pd.DataFrame(results).to_csv(f"predictions_{datetime.now().strftime('%Y-%m-%d')}.csv", index=False, encoding="utf-8-sig")
