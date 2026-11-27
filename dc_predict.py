@@ -386,7 +386,8 @@ def main():
             m = df_league[((df_league["home"] == team) | (df_league["away"] == team)) & (df_league["date"] < today)]
             return 99 if len(m)==0 else (today - m["date"].max()).days
         rest_h, rest_a = get_rest(h_en), get_rest(a_en)
-
+        
+        if h_en not in model._idx or a_en not in model._idx: continue
         g, lh, la = model.predict(h_en, a_en, rest_h, rest_a)
         model_hw = float(np.tril(g, -1).sum())
         model_dr = float(np.trace(g))
