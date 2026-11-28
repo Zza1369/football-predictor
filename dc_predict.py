@@ -413,8 +413,10 @@ def main():
             kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
             kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
 
-            if ev_h > 0.05: val_tag_h = f"主胜EV +{ev_h:.1%} (凯利 {kelly_h:.1%})"
-            if ev_a > 0.05: val_tag_a = f"客胜EV +{ev_a:.1%} (凯利 {kelly_a:.1%})"
+            if ev_h > 0.20: val_tag_h = f"⚠️ 主胜异常高EV(诱盘陷阱,放弃)"
+elif ev_h > 0.05: val_tag_h = f"主胜EV +{ev_h:.1%} (凯利 {kelly_h:.1%})"
+if ev_a > 0.20: val_tag_a = f"⚠️ 客胜异常高EV(诱盘陷阱,放弃)"
+elif ev_a > 0.05: val_tag_a = f"客胜EV +{ev_a:.1%} (凯利 {kelly_a:.1%})"
 
             A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
             A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
