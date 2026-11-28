@@ -380,14 +380,17 @@ def main():
             fitted[code] = DixonColes().fit(cache[code])
         model = fitted[code]
 
+        if h_en not in model._idx or a_en not in model._idx:
+            md += f"⚠️ 【{name}】{h_cn} vs {a_cn}：队名匹配失败，跳过。\n\n"
+            continue
+
         df_league = cache[code]
         today = pd.Timestamp.now().normalize()
         def get_rest(team):
             m = df_league[((df_league["home"] == team) | (df_league["away"] == team)) & (df_league["date"] < today)]
             return 99 if len(m)==0 else (today - m["date"].max()).days
         rest_h, rest_a = get_rest(h_en), get_rest(a_en)
-        
-        if h_en not in model._idx or a_en not in model._idx: continue
+
         g, lh, la = model.predict(h_en, a_en, rest_h, rest_a)
         model_hw = float(np.tril(g, -1).sum())
         model_dr = float(np.trace(g))
@@ -409,14 +412,20 @@ def main():
             tot = imp_h + imp_d + imp_a
             mkt_hw, mkt_dr, mkt_aw = imp_h/tot, imp_d/tot, imp_a/tot
 
-            ev_h = (model_hw * oh) - 1; ev_a = (model_aw * oa) - 1
+            ev_h = (model_hw * oh) - 1
+            ev_a = (model_aw * oa) - 1
             kelly_h = max(0, ((model_hw * oh - 1) / (oh - 1)) * 0.5) if oh > 1 and model_hw > 0 else 0
             kelly_a = max(0, ((model_aw * oa - 1) / (oa - 1)) * 0.5) if oa > 1 and model_aw > 0 else 0
 
-            if ev_h > 0.20: val_tag_h = f"⚠️ 主胜异常高EV(诱盘陷阱,放弃)"
-elif ev_h > 0.05: val_tag_h = f"主胜EV +{ev_h:.1%} (凯利 {kelly_h:.1%})"
-if ev_a > 0.20: val_tag_a = f"⚠️ 客胜异常高EV(诱盘陷阱,放弃)"
-elif ev_a > 0.05: val_tag_a = f"客胜EV +{ev_a:.1%} (凯利 {kelly_a:.1%})"
+            if ev_h > 0.20: 
+                val_tag_h = f"⚠️ 主胜异常高EV(诱盘陷阱,放弃)"
+            elif ev_h > 0.05: 
+                val_tag_h = f"主胜EV +{ev_h:.1%} (凯利 {kelly_h:.1%})"
+                
+            if ev_a > 0.20: 
+                val_tag_a = f"⚠️ 客胜异常高EV(诱盘陷阱,放弃)"
+            elif ev_a > 0.05: 
+                val_tag_a = f"客胜EV +{ev_a:.1%} (凯利 {kelly_a:.1%})"
 
             A_hw = WEIGHT_A * mkt_hw + (1 - WEIGHT_A) * model_hw
             A_dr = WEIGHT_A * mkt_dr + (1 - WEIGHT_A) * model_dr
